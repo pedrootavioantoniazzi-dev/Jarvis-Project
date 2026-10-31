@@ -2468,7 +2468,7 @@ function falarBloco(texto, sinal) {
   return new Promise((resolve) => {
     const u = new SpeechSynthesisUtterance(texto);
     u.lang = "pt-BR";
-    const voz = vozes.find((v) => v.name === nomeVoz);
+    const voz = vozes.find((v) => v.name === nomeVoz) || vozes[0];
     if (voz) { u.voice = voz; u.lang = voz.lang; }
     // Um pouco mais grave e pausado: soa mais como um assistente calmo.
     const neural = voz && /natural/i.test(voz.name);
@@ -2488,7 +2488,10 @@ function falarBloco(texto, sinal) {
 async function falar(texto, sinal) {
   const limpo = paraFala(texto || "");
   if (mudo || !limpo) { mudarEstado("idle"); return; }
-  if (nomeVoz === PIPER && piperDisponivel()) {
+  // A voz neural só entra quando já está pronta: enquanto baixa (primeira vez),
+  // responde na hora com a voz do navegador em vez de deixar a pessoa esperando.
+  if (nomeVoz === PIPER && piperDisponivel() && !piperPronto) prepararPiper().catch(() => {});
+  if (nomeVoz === PIPER && piperDisponivel() && piperPronto) {
     try {
       await falarPiper(limpo, sinal);
       return;
@@ -2577,7 +2580,7 @@ function prepararPiper() {
         if (!p.url.endsWith(".onnx")) return;
         const mb = (p.loaded / 1048576).toFixed(0);
         const pct = p.total ? " (" + Math.round((p.loaded * 100) / p.total) + "%)" : "";
-        mostrarProgresso(`Baixando a voz: ${mb} MB${pct}. Só na primeira vez.`);
+        mostrarProgresso(`Baixando a voz nova: ${mb} MB${pct}. Só na primeira vez; enquanto isso ele fala com a voz do navegador.`);
       },
     }).then((s) => {
       piperPronto = true;
@@ -2626,7 +2629,6 @@ function tocar(buffer, sinal) {
 
 async function falarPiper(limpo, sinal) {
   await prepararAudio();
-  if (!piperPronto) mudarEstado("thinking", "PREPARANDO A VOZ");
   const sessao = await prepararPiper();
   const blocos = frases(limpo);
   let jaFalou = false;
