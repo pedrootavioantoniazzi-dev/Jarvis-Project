@@ -46,6 +46,16 @@
 
   canvas#hud { position: fixed; inset: 0; width: 100%; height: 100%; cursor: pointer; }
 
+  /* Modo de espera: tudo em vermelho até duas palmas (ou um toque) ligarem de novo. */
+  body.dormindo {
+    --ciano: #ff4d5e;
+    --ciano-fraco: rgba(255, 77, 94, 0.35);
+    --ciano-linha: rgba(255, 77, 94, 0.2);
+    --texto: #ffd7db;
+    --texto-fraco: rgba(255, 215, 219, 0.55);
+    background: radial-gradient(ellipse at 50% 45%, #3a0810 0%, #1f040a 38%, #0c0204 75%);
+  }
+
   .titulo { position: fixed; top: 22px; left: 0; right: 0; text-align: center; pointer-events: none; }
   .titulo h1 {
     margin: 0; font-size: 26px; font-weight: 600; letter-spacing: 0.7em; padding-left: 0.7em;
@@ -87,6 +97,7 @@
   .ajuda-eleven a { color: var(--ciano); }
   details.ajustes summary { cursor: pointer; font-size: 11px; letter-spacing: 0.2em; }
   details.ajustes label { display: block; margin-top: 6px; font-size: 12px; letter-spacing: 0.04em; }
+  details.ajustes input[type="range"] { height: auto; padding: 0; accent-color: var(--ciano); }
   details.ajustes input {
     width: 100%; margin-top: 3px; height: 28px; padding: 0 6px; border: 1px solid var(--ciano-linha);
     background: rgba(2, 8, 14, 0.85); color: var(--texto); font: 12px var(--mono); outline: none;
@@ -200,6 +211,9 @@
       <label>Endereço do Ollama
         <input type="text" id="ollama-url" spellcheck="false" autocomplete="off">
       </label>
+      <label>Sensibilidade das palmas: <span id="sens-valor"></span>
+        <input type="range" id="sens-palmas" min="1" max="10" step="1">
+      </label>
       <label>Chave da ElevenLabs (voz realista)
         <input type="password" id="eleven-chave" spellcheck="false" autocomplete="off" placeholder="cole aqui a chave sk_…">
       </label>
@@ -227,6 +241,7 @@
     <div class="linha"><span>Cérebro (Ollama)</span><span><i class="ponto" id="st-cerebro"></i></span></div>
     <div class="linha"><span>Ouvido</span><span><i class="ponto" id="st-ouvido"></i></span></div>
     <div class="linha"><span>Voz</span><span><i class="ponto" id="st-voz"></i></span></div>
+    <div class="linha"><span>Palmas</span><span><i class="ponto" id="st-palmas"></i></span></div>
     <div class="linha"><span>Memória</span><span id="st-memoria" style="font-family: var(--mono); font-size: 12px">0</span></div>
   </section>
 
@@ -2105,6 +2120,7 @@ onnxruntime-web/dist/esm/ort.min.js:
 const $ = (id) => document.getElementById(id);
 
 const ROTULOS = {
+  sleeping: "DESLIGADO · BATA 2 PALMAS",
   idle: "TOQUE PARA FALAR",
   listening: "OUVINDO",
   thinking: "PENSANDO",
@@ -2160,6 +2176,15 @@ let reconhecedor = null;
 let nivel = 0;
 let nivelFala = 0;
 
+// Mãos livres: ouve sem parar e responde depois de uma pausa; sem conversa por
+// um minuto entra em espera (vermelho) e duas palmas o ligam de novo.
+const parametros = new URLSearchParams(location.search);
+const TEMPO_DORMIR = (Number(parametros.get("dormir")) || 60) * 1000;
+const SILENCIO_FIM = 1500;
+let dormindo = true;
+let ultimoContato = Date.now();
+function contato() { ultimoContato = Date.now(); }
+
 // ---------- estado e legenda ----------
 
 function mudarEstado(novo, extra = "") {
@@ -2206,7 +2231,7 @@ const AVISO_NAVEGADOR = ehBrave
   : "Este navegador não reconhece voz. Use o Google Chrome ou o Microsoft Edge.";
 
 function ouvir() {
-  if (estado !== "idle") return;
+  if (estado !== "idle" || dormindo) return;
   if (!ouvidoOk) {
     legenda("", "", AVISO_NAVEGADOR);
     return;
@@ -2214,20 +2239,28 @@ function ouvir() {
   const rec = new Reconhecimento();
   rec.lang = "pt-BR";
   rec.interimResults = true;
-  rec.continuous = false;
+  // No modo CONVERSA ele ouve sem parar e só responde depois de uma pausa.
+  rec.continuous = continuo;
   rec.maxAlternatives = 1;
   let final = "";
+  let parcial = "";
+  let silencio = null;
   rec.cancelado = false;
 
   rec.onresult = (e) => {
-    let parcial = "";
+    parcial = "";
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const r = e.results[i];
       if (r.isFinal) final += r[0].transcript;
       else parcial += r[0].transcript;
     }
+    contato();
     nivel = Math.max(nivel, 0.6);
     legenda((final + " " + parcial).trim(), "");
+    if (continuo) {
+      clearTimeout(silencio);
+      silencio = setTimeout(() => { try { rec.stop(); } catch (err) { /* já parou */ } }, SILENCIO_FIM);
+    }
   };
   rec.onspeechstart = () => { nivel = Math.max(nivel, 0.5); };
   rec.onerror = (e) => {
@@ -2235,8 +2268,14 @@ function ouvir() {
       rec.cancelado = true;
       legenda("", "", "Não consegui usar o microfone. Clique no cadeado ao lado do endereço do site e permita o microfone.");
     } else if (e.error === "no-speech") {
+      // No modo CONVERSA é normal: ele volta a ouvir sozinho.
+      if (!continuo) {
+        rec.cancelado = true;
+        legenda("", "Não ouvi nada. Toque no núcleo quando quiser falar.");
+      }
+    } else if (e.error === "audio-capture") {
       rec.cancelado = true;
-      legenda("", "Não ouvi nada. Toque no núcleo quando quiser falar.");
+      legenda("", "", "Não achei nenhum microfone. Confira se ele está conectado e liberado no Windows.");
     } else if (e.error === "network") {
       rec.cancelado = true;
       legenda("", "", "O reconhecimento de voz falhou ao falar com o serviço de voz. Confira a internet; se estiver usando o Brave, abra no Chrome ou no Edge.");
@@ -2245,13 +2284,20 @@ function ouvir() {
     }
   };
   rec.onend = () => {
+    clearTimeout(silencio);
     if (reconhecedor === rec) reconhecedor = null;
-    const texto = final.trim();
-    if (rec.cancelado || !texto) {
+    const texto = (final + " " + parcial).trim();
+    if (rec.cancelado) {
       if (estado === "listening") mudarEstado("idle");
       return;
     }
-    perguntar(texto, true);
+    if (texto) {
+      perguntar(texto, true);
+      return;
+    }
+    if (estado === "listening") mudarEstado("idle");
+    // O Chrome encerra a escuta depois de um tempo em silêncio: recomeça.
+    if (continuo && !dormindo) setTimeout(() => { if (estado === "idle" && !dormindo) ouvir(); }, 300);
   };
 
   reconhecedor = rec;
@@ -2343,7 +2389,7 @@ async function perguntar(texto, porVoz) {
     abortador = new AbortController();
     const sinalLocal = abortador.signal;
     await falar(local, sinalLocal);
-    if (!sinalLocal.aborted && estado === "idle" && porVoz && continuo) ouvir();
+    if (!sinalLocal.aborted && estado === "idle" && continuo && !dormindo) ouvir();
     return;
   }
 
@@ -2401,7 +2447,7 @@ async function perguntar(texto, porVoz) {
   historico.push({ role: "assistant", content: resposta });
   legenda(texto, resposta || "(sem resposta)");
   await falar(resposta, sinal);
-  if (!sinal.aborted && estado === "idle" && porVoz && continuo) ouvir();
+  if (!sinal.aborted && estado === "idle" && continuo && !dormindo) ouvir();
 }
 
 // ---------- falar (voz do navegador) ----------
@@ -2513,6 +2559,15 @@ function falarBloco(texto, sinal) {
 }
 
 async function falar(texto, sinal) {
+  contato();
+  try {
+    await falarSemContar(texto, sinal);
+  } finally {
+    contato();
+  }
+}
+
+async function falarSemContar(texto, sinal) {
   const limpo = paraFala(texto || "");
   if (mudo || !limpo) { mudarEstado("idle"); return; }
   if (nomeVoz === ELEVEN && elevenDisponivel()) {
@@ -2636,13 +2691,19 @@ function prepararPiper() {
   return piperSessao;
 }
 
-async function prepararAudio() {
+function criarAudio() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     analisador = audioCtx.createAnalyser();
     analisador.fftSize = 512;
     analisador.connect(audioCtx.destination);
+    audioCtx.addEventListener("statechange", atualizarPalmas);
   }
+  return audioCtx;
+}
+
+async function prepararAudio() {
+  criarAudio();
   if (audioCtx.state === "suspended") await audioCtx.resume();
 }
 
@@ -2779,17 +2840,189 @@ $("eleven-voz").addEventListener("change", (e) => {
   carregarVozes();
 });
 
+// ---------- modo de espera e palmas ----------
+
+// Roda no áudio do microfone: avisa cada batida forte e curta (pico bem acima
+// do ruído de fundo) e manda o nível do som para animar o núcleo.
+const CODIGO_DETECTOR = `
+class DetectorDePalmas extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.fundo = 0.005;
+    this.ultimo = -1;
+    this.limiar = 0.3;
+    this.conta = 0;
+    this.soma = 0;
+    this.port.onmessage = (e) => { if (e.data && e.data.limiar) this.limiar = e.data.limiar; };
+  }
+  process(entradas) {
+    const canal = entradas[0] && entradas[0][0];
+    if (!canal) return true;
+    let pico = 0;
+    let energia = 0;
+    for (let i = 0; i < canal.length; i++) {
+      const v = canal[i];
+      const a = v < 0 ? -v : v;
+      if (a > pico) pico = a;
+      energia += v * v;
+    }
+    const rms = Math.sqrt(energia / canal.length);
+    if (pico > this.limiar && rms > this.fundo * 5 && currentTime - this.ultimo > 0.12) {
+      this.ultimo = currentTime;
+      this.port.postMessage({ tipo: "pico", t: currentTime });
+    }
+    this.fundo = this.fundo * 0.998 + rms * 0.002;
+    this.soma += rms;
+    if (++this.conta >= 8) {
+      this.port.postMessage({ tipo: "nivel", rms: this.soma / 8 });
+      this.conta = 0;
+      this.soma = 0;
+    }
+    return true;
+  }
+}
+registerProcessor("detector-de-palmas", DetectorDePalmas);
+`;
+
+let micEstado = "desligado"; // desligado | iniciando | ok | negado
+let micNo = null;
+let micNivel = 0;
+let palmas = [];
+let timerPalmas = null;
+let sensibilidade = Number(ler("jarvis.palmas", "5")) || 5;
+
+function limiarPalmas() {
+  return Math.max(0.05, 0.55 - sensibilidade * 0.05);
+}
+
+function atualizarPalmas() {
+  if (micEstado === "negado") ponto("st-palmas", "erro");
+  else if (micEstado === "ok" && audioCtx && audioCtx.state === "running") ponto("st-palmas", "ok");
+  else ponto("st-palmas", "espera");
+  if (dormindo && estado === "sleeping") mudarEstado("sleeping", rotuloDormindo());
+}
+
+function rotuloDormindo() {
+  // Sem um primeiro toque o Chrome não deixa a página ouvir o som: aí as palmas ainda não funcionam.
+  if (micEstado === "ok" && audioCtx && audioCtx.state === "running") return ROTULOS.sleeping;
+  return "DESLIGADO · TOQUE PARA LIGAR";
+}
+
+async function iniciarMicrofone() {
+  if (micEstado === "iniciando" || micEstado === "ok") return;
+  if (!navigator.mediaDevices || !window.AudioWorkletNode) return;
+  micEstado = "iniciando";
+  try {
+    criarAudio();
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    // Aberta direto do computador (file://), o Chrome recusa o detector vindo de
+    // um blob: o endereço data: funciona nos dois casos; o blob fica de reserva.
+    try {
+      await audioCtx.audioWorklet.addModule("data:application/javascript;charset=utf-8," + encodeURIComponent(CODIGO_DETECTOR));
+    } catch (e) {
+      await audioCtx.audioWorklet.addModule(URL.createObjectURL(new Blob([CODIGO_DETECTOR], { type: "application/javascript" })));
+    }
+    const fonte = audioCtx.createMediaStreamSource(stream);
+    micNo = new AudioWorkletNode(audioCtx, "detector-de-palmas");
+    micNo.port.onmessage = (e) => {
+      if (e.data.tipo === "nivel") micNivel = e.data.rms;
+      else if (e.data.tipo === "pico") ouviuPalma(e.data.t);
+    };
+    micNo.port.postMessage({ limiar: limiarPalmas() });
+    const silencioso = audioCtx.createGain();
+    silencioso.gain.value = 0;
+    fonte.connect(micNo);
+    micNo.connect(silencioso);
+    silencioso.connect(audioCtx.destination);
+    micEstado = "ok";
+  } catch (e) {
+    micEstado = e && e.name === "NotAllowedError" ? "negado" : "desligado";
+    if (micEstado === "negado") legenda("", "", "Para as palmas funcionarem, permita o microfone: clique no cadeado ao lado do endereço.");
+  }
+  atualizarPalmas();
+}
+
+// Duas batidas com 0,12 a 1 segundo entre elas, e nada logo depois (aplausos e
+// barulho contínuo têm mais batidas e são ignorados).
+function ouviuPalma(t) {
+  if (!dormindo) return;
+  palmas = palmas.filter((x) => t - x < 1.5);
+  palmas.push(t);
+  mudarEstado("sleeping", palmas.length === 1 ? "PALMA…" : "PALMA, PALMA…");
+  clearTimeout(timerPalmas);
+  timerPalmas = setTimeout(() => {
+    const [a, b] = palmas;
+    const certo = palmas.length === 2 && b - a >= 0.12 && b - a <= 1.0;
+    palmas = [];
+    if (certo) acordar();
+    else if (dormindo) mudarEstado("sleeping", rotuloDormindo());
+  }, 500);
+}
+
+function dormir() {
+  if (dormindo) return;
+  dormindo = true;
+  pararDeOuvir(false);
+  document.body.classList.add("dormindo");
+  mudarEstado("sleeping", rotuloDormindo());
+  legenda("", "Modo de espera. Bata duas palmas ou toque no núcleo para me chamar.");
+}
+
+function acordar() {
+  if (!dormindo) return;
+  dormindo = false;
+  palmas = [];
+  document.body.classList.remove("dormindo");
+  contato();
+  mudarEstado("idle");
+  abortador = new AbortController();
+  const sinal = abortador.signal;
+  legenda("", "Às suas ordens, senhor.");
+  falar("Às suas ordens, senhor.", sinal).then(() => {
+    if (!sinal.aborted && estado === "idle" && continuo && !dormindo) ouvir();
+  });
+}
+
+// Um minuto sem conversa (contando depois que ele termina de falar) = espera.
+setInterval(() => {
+  if (dormindo || !(estado === "idle" || estado === "listening")) return;
+  if (Date.now() - ultimoContato > TEMPO_DORMIR) dormir();
+}, 1000);
+
+const campoSens = $("sens-palmas");
+campoSens.value = String(sensibilidade);
+$("sens-valor").textContent = sensibilidade;
+campoSens.addEventListener("input", () => {
+  sensibilidade = Number(campoSens.value);
+  $("sens-valor").textContent = sensibilidade;
+  gravar("jarvis.palmas", String(sensibilidade));
+  if (micNo) micNo.port.postMessage({ limiar: limiarPalmas() });
+});
+
+// O primeiro toque ou tecla libera o som da página (regra do Chrome).
+function liberarSom() {
+  prepararAudio().catch(() => {});
+  iniciarMicrofone();
+}
+document.addEventListener("pointerdown", liberarSom, { once: true });
+document.addEventListener("keydown", liberarSom, { once: true });
+
 // ---------- cancelar e controles ----------
 
 function parar() {
   if (abortador) abortador.abort();
   pararFala();
   pararDeOuvir(false);
-  mudarEstado("idle");
+  if (dormindo) mudarEstado("sleeping", rotuloDormindo());
+  else mudarEstado("idle");
 }
 
 function acaoPrincipal() {
   prepararAudio().catch(() => {});
+  contato();
+  if (dormindo) return acordar();
   if (estado === "idle") return ouvir();
   if (estado === "listening") return pararDeOuvir(true);
   if (estado === "speaking") { parar(); return ouvir(); }
@@ -2803,11 +3036,18 @@ function enviarTexto(texto) {
   texto = texto.trim();
   if (!texto) return false;
   prepararAudio().catch(() => {});
+  contato();
+  if (dormindo) {
+    dormindo = false;
+    document.body.classList.remove("dormindo");
+    mudarEstado("idle");
+  }
   if (estado !== "idle") parar();
   perguntar(texto, false);
   return true;
 }
 
+$("texto").addEventListener("input", contato);
 $("form").addEventListener("submit", (e) => {
   e.preventDefault();
   if (enviarTexto($("texto").value)) $("texto").value = "";
@@ -2817,7 +3057,14 @@ function atualizarBotoes() {
   $("continuo").setAttribute("aria-pressed", String(continuo));
   $("mudo").setAttribute("aria-pressed", String(mudo));
 }
-$("continuo").addEventListener("click", () => { continuo = !continuo; gravar("jarvis.continuo", continuo ? "1" : "0"); atualizarBotoes(); });
+$("continuo").addEventListener("click", () => {
+  continuo = !continuo;
+  gravar("jarvis.continuo", continuo ? "1" : "0");
+  atualizarBotoes();
+  contato();
+  if (continuo && estado === "idle" && !dormindo) ouvir();
+  else if (!continuo && estado === "listening") pararDeOuvir(false);
+});
 $("mudo").addEventListener("click", () => {
   mudo = !mudo;
   gravar("jarvis.mudo", mudo ? "1" : "0");
@@ -3081,6 +3328,7 @@ const ctx = canvas.getContext("2d");
 const reduzirMovimento = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function corDoEstado() {
+  if (dormindo) return [255, 77, 94];
   if (!cerebroOk && estado === "idle") return [255, 181, 71];
   if (estado === "thinking") return [255, 181, 71];
   return [95, 212, 255];
@@ -3125,11 +3373,12 @@ function desenhar(t) {
   const cx = w / 2;
   const cy = h * 0.42;
   const R = Math.min(w, h) * 0.12;
-  const vel = reduzirMovimento ? 0.25 : 1;
+  const vel = (reduzirMovimento ? 0.25 : 1) * (dormindo ? 0.25 : 1);
   const cor = corDoEstado();
 
   let alvo;
-  if (estado === "listening") alvo = 0.25 + 0.2 * Math.sin(t / 200);
+  if (dormindo) alvo = 0.04 + 0.03 * Math.sin(t / 1400);
+  else if (estado === "listening") alvo = micEstado === "ok" ? Math.min(1, 0.15 + micNivel * 8) : 0.25 + 0.2 * Math.sin(t / 200);
   else if (estado === "speaking" && fonteAtual && analisador) {
     analisador.getByteFrequencyData(freq);
     let soma = 0;
@@ -3229,11 +3478,15 @@ salvarMemoria();
 carregarVozes();
 if (nomeVoz === PIPER && piperDisponivel()) setTimeout(() => prepararPiper().catch(() => {}), 1500);
 requestAnimationFrame(desenhar);
-mudarEstado("idle");
+// Começa em espera: duas palmas (ou um toque) ligam o Jarvis.
+document.body.classList.add("dormindo");
+mudarEstado("sleeping", rotuloDormindo());
+iniciarMicrofone();
+atualizarPalmas();
 
 atualizarCerebro().then(() => {
-  if (cerebroOk) legenda("", "Às suas ordens. Toque no núcleo ou aperte Espaço para falar.");
-  else legenda("", "", AJUDA_OLLAMA);
+  if (!cerebroOk) legenda("", "", AJUDA_OLLAMA);
+  else if (dormindo) legenda("", "Bata duas palmas ou toque no núcleo para me ligar.");
 });
 setInterval(atualizarCerebro, 10000);
 </script>
