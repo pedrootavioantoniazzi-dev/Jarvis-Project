@@ -80,6 +80,7 @@
   .ponto.ok { background: var(--verde); box-shadow: 0 0 8px var(--verde); }
   .ponto.espera { background: var(--ambar); box-shadow: 0 0 8px var(--ambar); }
   .ponto.erro { background: var(--vermelho); box-shadow: 0 0 8px var(--vermelho); }
+  .dica-voz { margin: 6px 0 0; color: var(--ambar); font-size: 12px; letter-spacing: 0.02em; line-height: 1.3; }
   details.ajustes { margin-top: 8px; color: var(--texto-fraco); }
   details.ajustes summary { cursor: pointer; font-size: 11px; letter-spacing: 0.2em; }
   details.ajustes label { display: block; margin-top: 6px; font-size: 12px; letter-spacing: 0.04em; }
@@ -189,6 +190,7 @@
     <h2>SISTEMA</h2>
     <div class="linha"><span>Modelo</span><select id="sel-modelo" aria-label="Modelo de IA"><option value="">—</option></select></div>
     <div class="linha"><span>Voz</span><select id="sel-voz" aria-label="Voz do Jarvis"><option value="">—</option></select></div>
+    <p class="dica-voz" id="dica-voz" hidden>Para uma voz bem mais natural, abra o Jarvis no Microsoft Edge e escolha "Antonio".</p>
     <details class="ajustes">
       <summary>AJUSTES</summary>
       <label>Endereço do Ollama
@@ -259,9 +261,10 @@ const ROTULOS = {
 const PERSONA = [
   "Você é o Jarvis, o assistente pessoal de IA do usuário, rodando no computador dele.",
   "Responda sempre em português do Brasil, a menos que o usuário peça outro idioma.",
-  "Seja educado, leal e eficiente, com um humor leve e discreto. Calmo sob pressão. Vá direto ao ponto.",
-  "Respostas curtas por padrão; dê detalhes só quando o usuário pedir.",
-  "Suas respostas são lidas em voz alta: fale de forma natural e evite tabelas, emojis e formatação pesada.",
+  "Seja educado, leal e eficiente, como um mordomo elegante, com um humor leve e discreto. Chame o usuário de senhor. Calmo sob pressão. Vá direto ao ponto.",
+  "Respostas curtas por padrão, de uma a três frases; dê detalhes só quando o usuário pedir.",
+  "Suas respostas são faladas em voz alta: escreva como quem conversa, em frases curtas e naturais. Nada de listas, tópicos, títulos, negrito, tabelas ou markdown.",
+  "Nunca use emojis nem emoticons.",
   "Você não tem acesso à internet: se perguntarem notícias, clima ou preços de hoje, diga que não consegue ver isso daqui.",
   "Nunca invente fatos. Se não souber, diga que não sabe.",
 ].join("\n");
@@ -282,6 +285,7 @@ const parametroOllama = new URLSearchParams(location.search).get("ollama");
 let OLLAMA = (parametroOllama || ler("jarvis.ollama", "http://localhost:11434")).replace(/\/+$/, "");
 let modelo = ler("jarvis.modelo", "");
 let nomeVoz = ler("jarvis.voz", "");
+let vozEscolhida = ler("jarvis.voz-escolhida", "0") === "1";
 let continuo = ler("jarvis.continuo", "1") === "1";
 let mudo = ler("jarvis.mudo", "0") === "1";
 
@@ -414,7 +418,15 @@ function tirarDoHistorico(msg) {
 }
 
 function semPensamento(texto) {
-  return texto.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trimStart();
+  return semEmoji(texto.replace(/<think>[\s\S]*?(<\/think>|$)/g, "")).trimStart();
+}
+
+// O modelo às vezes coloca emojis mesmo pedindo que não: eles saem aqui.
+function semEmoji(texto) {
+  return texto
+    .replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}\u{1F3FB}-\u{1F3FF}\u200D\uFE0F\u20E3]/gu, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/ +([.,!?;:])/g, "$1");
 }
 
 function contexto() {
@@ -537,9 +549,13 @@ let vozes = [];
 function carregarVozes() {
   const todas = window.speechSynthesis ? speechSynthesis.getVoices() : [];
   const pt = todas.filter((v) => /^pt(-|_|$)/i.test(v.lang));
-  // Brasil primeiro, e as vozes "Natural" (Edge) e masculinas antes.
+  // A melhor primeiro: vozes neurais do Edge ("Natural"), masculinas, do Brasil.
+  // A voz "Google português" é a mais robótica e fica por último.
   const peso = (v) =>
-    (/pt[-_]BR/i.test(v.lang) ? 0 : 10) + (/natural|online/i.test(v.name) ? 0 : 3) + (/antonio|daniel|male|masculin/i.test(v.name) ? 0 : 1);
+    (/natural/i.test(v.name) ? 0 : 20) +
+    (/antonio|daniel|macerio|male|masculin/i.test(v.name) ? 0 : 5) +
+    (/pt[-_]BR/i.test(v.lang) ? 0 : 3) +
+    (/google/i.test(v.name) ? 10 : 0);
   vozes = pt.sort((a, b) => peso(a) - peso(b));
   const sel = $("sel-voz");
   sel.textContent = "";
@@ -547,19 +563,27 @@ function carregarVozes() {
     sel.append(new Option("nenhuma em pt", ""));
   } else {
     for (const v of vozes) sel.append(new Option(v.name.replace(/^Microsoft\s+/, "").replace(/\s*-\s*Portuguese.*$/i, ""), v.name));
-    if (!vozes.some((v) => v.name === nomeVoz)) nomeVoz = vozes[0].name;
+    // Troca para a melhor voz quando ela aparece, a menos que a pessoa tenha escolhido outra.
+    if (!vozes.some((v) => v.name === nomeVoz) || (!vozEscolhida && nomeVoz !== vozes[0].name)) nomeVoz = vozes[0].name;
     sel.value = nomeVoz;
   }
-  ponto("st-voz", vozes.length ? "ok" : todas.length ? "espera" : "erro");
+  const natural = vozes.some((v) => /natural/i.test(v.name));
+  ponto("st-voz", natural ? "ok" : vozes.length ? "espera" : "erro");
+  $("dica-voz").hidden = natural || !vozes.length;
 }
 if (window.speechSynthesis) {
   speechSynthesis.addEventListener("voiceschanged", carregarVozes);
   carregarVozes();
 }
-$("sel-voz").addEventListener("change", (e) => { nomeVoz = e.target.value; gravar("jarvis.voz", nomeVoz); });
+$("sel-voz").addEventListener("change", (e) => {
+  nomeVoz = e.target.value;
+  vozEscolhida = true;
+  gravar("jarvis.voz", nomeVoz);
+  gravar("jarvis.voz-escolhida", "1");
+});
 
 function paraFala(texto) {
-  return texto
+  return semEmoji(texto)
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`([^`]*)`/g, "$1")
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
@@ -593,7 +617,10 @@ function falarBloco(texto, sinal) {
     u.lang = "pt-BR";
     const voz = vozes.find((v) => v.name === nomeVoz);
     if (voz) { u.voice = voz; u.lang = voz.lang; }
-    u.rate = 1.05;
+    // Um pouco mais grave e pausado: soa mais como um assistente calmo.
+    const neural = voz && /natural/i.test(voz.name);
+    u.rate = neural ? 1.0 : 0.95;
+    u.pitch = neural ? 0.92 : 0.85;
     // Se a voz do sistema travar sem avisar o fim, segue em frente mesmo assim.
     const limite = setTimeout(() => { pararFala(); resolve(); }, 4000 + texto.length * 150);
     const fim = () => { clearTimeout(limite); resolve(); };
