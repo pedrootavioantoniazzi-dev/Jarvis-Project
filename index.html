@@ -83,6 +83,8 @@
   .voz-progresso { margin: 6px 0 0; color: var(--ciano); font: 12px var(--mono); letter-spacing: 0.02em; }
   .dica-voz { margin: 6px 0 0; color: var(--ambar); font-size: 12px; letter-spacing: 0.02em; line-height: 1.3; }
   details.ajustes { margin-top: 8px; color: var(--texto-fraco); }
+  .ajuda-eleven { margin: 6px 0 0; font-size: 12px; letter-spacing: 0.02em; line-height: 1.3; }
+  .ajuda-eleven a { color: var(--ciano); }
   details.ajustes summary { cursor: pointer; font-size: 11px; letter-spacing: 0.2em; }
   details.ajustes label { display: block; margin-top: 6px; font-size: 12px; letter-spacing: 0.04em; }
   details.ajustes input {
@@ -198,6 +200,13 @@
       <label>Endereço do Ollama
         <input type="text" id="ollama-url" spellcheck="false" autocomplete="off">
       </label>
+      <label>Chave da ElevenLabs (voz realista)
+        <input type="password" id="eleven-chave" spellcheck="false" autocomplete="off" placeholder="cole aqui a chave sk_…">
+      </label>
+      <label>ID da voz na ElevenLabs
+        <input type="text" id="eleven-voz" spellcheck="false" autocomplete="off">
+      </label>
+      <p class="ajuda-eleven">Crie uma conta grátis em <a href="https://elevenlabs.io" target="_blank" rel="noopener">elevenlabs.io</a> e gere a chave em Developers → API Keys. A chave fica só neste navegador.</p>
     </details>
   </section>
 
@@ -2129,6 +2138,12 @@ const parametroOllama = new URLSearchParams(location.search).get("ollama");
 let OLLAMA = (parametroOllama || ler("jarvis.ollama", "http://localhost:11434")).replace(/\/+$/, "");
 let modelo = ler("jarvis.modelo", "");
 const PIPER = "piper";
+const ELEVEN = "eleven";
+// "Daniel": voz masculina pronta da ElevenLabs, grave e calma, sotaque britânico.
+const ELEVEN_VOZ_PADRAO = "onwK4e9ZLuTAKqWW03F9";
+let elevenChave = ler("jarvis.eleven-chave", "");
+let elevenVozId = ler("jarvis.eleven-voz", ELEVEN_VOZ_PADRAO);
+let elevenFalhou = false;
 let nomeVoz = ler("jarvis.voz", PIPER);
 let vozEscolhida = ler("jarvis.voz-escolhida", "0") === "1";
 let continuo = ler("jarvis.continuo", "1") === "1";
@@ -2404,17 +2419,27 @@ function carregarVozes() {
   vozes = pt.sort((a, b) => peso(a) - peso(b));
   const sel = $("sel-voz");
   sel.textContent = "";
+  if (elevenDisponivel()) sel.append(new Option("Jarvis (ElevenLabs)", ELEVEN));
   if (piperDisponivel()) sel.append(new Option("Jarvis (neural)", PIPER));
   for (const v of vozes) sel.append(new Option(v.name.replace(/^Microsoft\s+/, "").replace(/\s*-\s*Portuguese.*$/i, ""), v.name));
   if (!sel.options.length) sel.append(new Option("nenhuma em pt", ""));
   // Sem escolha da pessoa: a voz neural; se ela não funcionar, a melhor do navegador.
-  const melhor = piperDisponivel() ? PIPER : vozes.length ? vozes[0].name : "";
+  const melhor = elevenDisponivel() ? ELEVEN : piperDisponivel() ? PIPER : vozes.length ? vozes[0].name : "";
   const existe = Array.from(sel.options).some((o) => o.value === nomeVoz);
   if (!existe || (!vozEscolhida && nomeVoz !== melhor)) nomeVoz = melhor;
   sel.value = nomeVoz;
   atualizarPontoVoz();
 }
+function elevenDisponivel() {
+  return !!elevenChave && !elevenFalhou;
+}
+
 function atualizarPontoVoz() {
+  if (nomeVoz === ELEVEN && elevenDisponivel()) {
+    ponto("st-voz", "ok");
+    $("dica-voz").hidden = true;
+    return;
+  }
   if (nomeVoz === PIPER && piperDisponivel()) {
     ponto("st-voz", piperPronto ? "ok" : "espera");
     $("dica-voz").hidden = true;
@@ -2488,6 +2513,15 @@ function falarBloco(texto, sinal) {
 async function falar(texto, sinal) {
   const limpo = paraFala(texto || "");
   if (mudo || !limpo) { mudarEstado("idle"); return; }
+  if (nomeVoz === ELEVEN && elevenDisponivel()) {
+    try {
+      await falarEleven(limpo, sinal);
+      return;
+    } catch (e) {
+      if (sinal.aborted || e.jaFalou) { if (estado === "speaking") mudarEstado("idle"); return; }
+      legenda("", texto, e.aviso || "A voz da ElevenLabs falhou (" + escapar(e.message || e) + "). Usei a voz do navegador.");
+    }
+  }
   // A voz neural só entra quando já está pronta: enquanto baixa (primeira vez),
   // responde na hora com a voz do navegador em vez de deixar a pessoa esperando.
   if (nomeVoz === PIPER && piperDisponivel() && !piperPronto) prepararPiper().catch(() => {});
@@ -2652,6 +2686,95 @@ async function falarPiper(limpo, sinal) {
   }
   if (estado === "speaking") mudarEstado("idle");
 }
+
+// ---------- voz da ElevenLabs (na nuvem, a mais realista) ----------
+
+async function sintetizarEleven(texto, sinal) {
+  const r = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + encodeURIComponent(elevenVozId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "xi-api-key": elevenChave, Accept: "audio/mpeg" },
+    body: JSON.stringify({
+      text: texto,
+      model_id: "eleven_flash_v2_5",
+      voice_settings: { stability: 0.55, similarity_boost: 0.75 },
+    }),
+    signal: sinal,
+  });
+  if (!r.ok) {
+    let detalhe = "";
+    try { const j = await r.json(); detalhe = (j.detail && (j.detail.message || j.detail.status || j.detail)) || ""; } catch (e) { /* sem corpo */ }
+    const erro = new Error(String(detalhe || r.status));
+    if (r.status === 401) {
+      elevenFalhou = true;
+      erro.aviso = "A chave da ElevenLabs não foi aceita. Confira em AJUSTES se colou a chave inteira.";
+    } else if (r.status === 402 || /quota|credits/i.test(String(detalhe))) {
+      elevenFalhou = true;
+      erro.aviso = "Os créditos grátis da ElevenLabs deste mês acabaram. Até renovar, uso a voz neural do navegador.";
+    } else if (r.status === 404) {
+      elevenFalhou = true;
+      erro.aviso = "Não achei essa voz na ElevenLabs. Confira o ID da voz em AJUSTES (ou apague para voltar ao Daniel).";
+    }
+    if (elevenFalhou) carregarVozes();
+    throw erro;
+  }
+  return audioCtx.decodeAudioData(await r.arrayBuffer());
+}
+
+// Junta frases em blocos de até ~250 letras: menos pedidos, e começa a falar cedo.
+function blocosEleven(texto) {
+  const blocos = [];
+  let atual = "";
+  for (const f of frases(texto)) {
+    if ((atual + " " + f).length > 250 && atual) { blocos.push(atual); atual = ""; }
+    atual = atual ? atual + " " + f : f;
+  }
+  if (atual) blocos.push(atual);
+  return blocos;
+}
+
+async function falarEleven(limpo, sinal) {
+  await prepararAudio();
+  const blocos = blocosEleven(limpo);
+  let jaFalou = false;
+  try {
+    let proximo = sintetizarEleven(blocos[0], sinal);
+    for (let i = 0; i < blocos.length; i++) {
+      const buffer = await proximo;
+      if (i + 1 < blocos.length) {
+        proximo = sintetizarEleven(blocos[i + 1], sinal);
+        proximo.catch(() => {});
+      }
+      if (sinal.aborted) return;
+      mudarEstado("speaking");
+      jaFalou = true;
+      await tocar(buffer, sinal);
+      if (sinal.aborted || estado !== "speaking") return;
+    }
+  } catch (e) {
+    e.jaFalou = jaFalou;
+    throw e;
+  }
+  if (estado === "speaking") mudarEstado("idle");
+}
+
+$("eleven-chave").value = elevenChave;
+$("eleven-voz").value = elevenVozId;
+$("eleven-chave").addEventListener("change", (e) => {
+  elevenChave = e.target.value.trim();
+  e.target.value = elevenChave;
+  gravar("jarvis.eleven-chave", elevenChave);
+  elevenFalhou = false;
+  // Quem cola a chave quer ouvir essa voz.
+  if (elevenChave) { nomeVoz = ELEVEN; gravar("jarvis.voz", nomeVoz); }
+  carregarVozes();
+});
+$("eleven-voz").addEventListener("change", (e) => {
+  elevenVozId = e.target.value.trim() || ELEVEN_VOZ_PADRAO;
+  e.target.value = elevenVozId;
+  gravar("jarvis.eleven-voz", elevenVozId);
+  elevenFalhou = false;
+  carregarVozes();
+});
 
 // ---------- cancelar e controles ----------
 
