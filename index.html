@@ -2134,6 +2134,7 @@ const PERSONA = [
   "Respostas curtas por padrão, de uma a três frases; dê detalhes só quando o usuário pedir.",
   "Suas respostas são faladas em voz alta: escreva como quem conversa, em frases curtas e naturais. Nada de listas, tópicos, títulos, negrito, tabelas ou markdown.",
   "Nunca use emojis nem emoticons.",
+  "O painel em que você roda projeta hologramas 3D (planeta, terra, esfera, cubo, pirâmide, DNA, átomo, toro, coração, diamante, foguete, galáxia, pendências, memória) e abre sites (Instagram, YouTube, WhatsApp, Gmail, Spotify, Google, mapas) quando o usuário pede com essas palavras. Se ele perguntar o que você sabe fazer, cite isso. Você não lê mensagens nem o feed do Instagram.",
   "Você não tem acesso à internet: se perguntarem notícias, clima ou preços de hoje, diga que não consegue ver isso daqui.",
   "Nunca invente fatos. Se não souber, diga que não sabe.",
 ].join("\n");
@@ -3022,6 +3023,7 @@ function parar() {
 function acaoPrincipal() {
   prepararAudio().catch(() => {});
   contato();
+  if (holo && !dormindo) { fecharHolograma(); return; }
   if (dormindo) return acordar();
   if (estado === "idle") return ouvir();
   if (estado === "listening") return pararDeOuvir(true);
@@ -3074,7 +3076,7 @@ $("mudo").addEventListener("click", () => {
 atualizarBotoes();
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { parar(); return; }
+  if (e.key === "Escape") { fecharHolograma(); parar(); return; }
   const campo = document.activeElement && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
   if (e.code === "Space" && !campo) {
     e.preventDefault();
@@ -3213,6 +3215,63 @@ function comandoLocal(texto) {
   const n = semAcento(t);
   let m;
 
+  // hologramas
+  if (/(fech|apag|tir|some|desliga|esconde)\w*\s+(?:com\s+)?(?:o\s+)?holograma/.test(n)) {
+    fecharHolograma();
+    return "Holograma desligado.";
+  }
+  if (/holograma|holografic|projet[ae]\s/.test(n)) {
+    if (/pendencia|tarefa/.test(n)) {
+      const abertas = tarefas.filter((x) => !x.feita).map((x) => "› " + x.texto);
+      mostrarHologramaDeTexto("PENDÊNCIAS", abertas.length ? abertas : ["Nenhuma pendência."]);
+      if (!abertas.length) return "Projetando suas pendências: está tudo em dia.";
+      return abertas.length === 1 ? "Projetando sua pendência, senhor." : `Projetando suas ${abertas.length} pendências, senhor.`;
+    }
+    if (/memoria|sobre mim/.test(n)) {
+      mostrarHologramaDeTexto("MEMÓRIA", memoria.length ? memoria.map((x) => "› " + x) : ["Ainda não sei nada sobre o senhor."]);
+      return "Projetando o que sei sobre o senhor.";
+    }
+    const achou = PALAVRAS_HOLO.find(([re]) => re.test(n));
+    const chave = achou ? achou[1] : /holograma\s*$|um holograma$|qualquer|aleatori|surpres/.test(n) ? Object.keys(FORMAS)[Math.floor(Math.random() * Object.keys(FORMAS).length)] : null;
+    if (chave) {
+      mostrarHolograma(chave);
+      return `Projetando ${FALA_FORMA[chave]}, senhor.`;
+    }
+    return "Ainda não sei projetar isso, senhor. Posso mostrar: planeta, terra, esfera, cubo, pirâmide, DNA, átomo, toro, coração, diamante, foguete, galáxia, suas pendências ou sua memória.";
+  }
+
+  // pesquisas e sites (o texto da busca mantém os acentos)
+  const tl = t.toLowerCase();
+  m = tl.match(/^(?:pesquis|procur|busc)\w*\s+(?:por\s+)?(.+?)\s+no\s+youtube$/) || tl.match(/^(?:pesquis|procur|busc)\w*\s+no\s+youtube\s+(?:por\s+)?(.+)$/);
+  if (m) {
+    abrirSite("https://www.youtube.com/results?search_query=" + encodeURIComponent(m[1]), "o YouTube");
+    return `Pesquisando ${m[1]} no YouTube.`;
+  }
+  m = tl.match(/^(?:abr\w*|mostr\w*|ve)\s+(?:o\s+)?perfil\s+d[oae]\s+@?([\w.]+)\s+no\s+insta(?:gram)?$/);
+  if (m) {
+    abrirSite("https://www.instagram.com/" + encodeURIComponent(m[1].replace(/^@/, "")) + "/", "o Instagram");
+    return `Abrindo o perfil de ${m[1]} no Instagram.`;
+  }
+  m = tl.match(/^(?:como\s+chego|como\s+chegar|rota\s+para|mapa\s+d[oae])\s+(?:em\s+|ao?\s+|na?\s+)?(.+)$/);
+  if (m) {
+    abrirSite("https://www.google.com/maps/search/" + encodeURIComponent(m[1]), "o Google Maps");
+    return `Abrindo o mapa de ${m[1]}.`;
+  }
+  m = tl.match(/^(?:pesquis|procur|busc|googl)\w*\s+(?:no\s+google\s+)?(?:por\s+|sobre\s+)?(.+?)(?:\s+no\s+google)?$/);
+  if (m && !/tarefa|pend[eê]ncia/.test(m[1])) {
+    abrirSite("https://www.google.com/search?q=" + encodeURIComponent(m[1]), "o Google");
+    return `Pesquisando ${m[1]} no Google.`;
+  }
+  m = n.match(/^(?:abr\w*|entr\w*|vai\s+n[oa]|acess\w*)\s+(?:o\s+|a\s+|as\s+|os\s+)?(?:meu\s+|minha\s+|minhas\s+|meus\s+)?(.+)$/);
+  if (m) {
+    const alvo = m[1].trim();
+    const site = SITES.find(([re]) => re.test(alvo));
+    if (site) {
+      abrirSite(site[1], site[2]);
+      return `Abrindo ${site[2]}, senhor.`;
+    }
+  }
+
   m = t.match(/^(?:adicion|anot|cri|coloc|bot|inclu)\w*\s+(?:uma\s+|a\s+)?(?:nova\s+)?(?:tarefa|pend[eê]ncia)\s*(?::|de|para)?\s*(.+)$/i);
   if (m) {
     const nova = adicionarTarefa(m[1]);
@@ -3265,6 +3324,362 @@ function comandoLocal(texto) {
   return "";
 }
 
+// ---------- hologramas ----------
+
+// Formas 3D de arame desenhadas aqui mesmo: cada uma é uma lista de linhas
+// (polilinhas de pontos [x, y, z], raio ~1) e, às vezes, de pontos soltos.
+function circulo(r, y, n, eixo = "y") {
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const c = Math.cos(a) * r;
+    const s2 = Math.sin(a) * r;
+    pts.push(eixo === "y" ? [c, y, s2] : eixo === "z" ? [c, s2, y] : [y, c, s2]);
+  }
+  return pts;
+}
+function girar(pts, ax, ay, az) {
+  return pts.map(([x, y, z]) => {
+    let y1 = y * Math.cos(ax) - z * Math.sin(ax), z1 = y * Math.sin(ax) + z * Math.cos(ax);
+    let x2 = x * Math.cos(ay) + z1 * Math.sin(ay), z2 = -x * Math.sin(ay) + z1 * Math.cos(ay);
+    return [x2 * Math.cos(az) - y1 * Math.sin(az), x2 * Math.sin(az) + y1 * Math.cos(az), z2];
+  });
+}
+function esferaLinhas(raio = 1, lat = 9, mer = 12) {
+  const linhas = [];
+  for (let i = 1; i < lat; i++) {
+    const phi = (i / lat) * Math.PI;
+    linhas.push(circulo(Math.sin(phi) * raio, Math.cos(phi) * raio, 40));
+  }
+  for (let j = 0; j < mer; j++) {
+    const a = (j / mer) * Math.PI;
+    linhas.push(girar(circulo(raio, 0, 40, "z"), 0, a, 0));
+  }
+  return linhas;
+}
+
+const FORMAS = {
+  esfera: { nome: "ESFERA", fazer: () => ({ linhas: esferaLinhas() }) },
+  planeta: {
+    nome: "PLANETA",
+    fazer: () => ({
+      linhas: [
+        ...esferaLinhas(0.8, 8, 10),
+        girar(circulo(1.25, 0, 60), 0.35, 0, 0.2),
+        girar(circulo(1.45, 0, 60), 0.35, 0, 0.2),
+        girar(circulo(1.55, 0, 60), 0.35, 0, 0.2),
+      ],
+    }),
+  },
+  terra: { nome: "TERRA", fazer: () => ({ linhas: [...esferaLinhas(1, 12, 16), girar(circulo(1.08, 0, 50), 0.41, 0, 0)] }) },
+  cubo: {
+    nome: "CUBO",
+    fazer: () => {
+      const v = (k) => [[-k, -k, -k], [k, -k, -k], [k, k, -k], [-k, k, -k], [-k, -k, k], [k, -k, k], [k, k, k], [-k, k, k]];
+      const a = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+      const g = v(0.8), p = v(0.4);
+      return { linhas: [...a.map(([i, j]) => [g[i], g[j]]), ...a.map(([i, j]) => [p[i], p[j]]), ...g.map((q, i) => [q, p[i]])] };
+    },
+  },
+  piramide: {
+    nome: "PIRÂMIDE",
+    fazer: () => {
+      const b = [[-0.9, -0.7, -0.9], [0.9, -0.7, -0.9], [0.9, -0.7, 0.9], [-0.9, -0.7, 0.9]];
+      const topo = [0, 1.0, 0];
+      return { linhas: [[...b, b[0]], ...b.map((q) => [q, topo]), [[-0.45, 0.15, -0.45], [0.45, 0.15, -0.45], [0.45, 0.15, 0.45], [-0.45, 0.15, 0.45], [-0.45, 0.15, -0.45]]] };
+    },
+  },
+  dna: {
+    nome: "DNA",
+    fazer: () => {
+      const h1 = [], h2 = [], degraus = [];
+      for (let i = 0; i <= 120; i++) {
+        const t = (i / 120) * Math.PI * 4;
+        const y = -1.2 + (i / 120) * 2.4;
+        h1.push([Math.cos(t) * 0.5, y, Math.sin(t) * 0.5]);
+        h2.push([Math.cos(t + Math.PI) * 0.5, y, Math.sin(t + Math.PI) * 0.5]);
+        if (i % 6 === 0) degraus.push([h1[i], h2[i]]);
+      }
+      return { linhas: [h1, h2, ...degraus] };
+    },
+  },
+  atomo: {
+    nome: "ÁTOMO",
+    fazer: () => ({
+      linhas: [
+        ...esferaLinhas(0.18, 5, 6),
+        girar(circulo(1.1, 0, 60), 1.2, 0, 0),
+        girar(circulo(1.1, 0, 60), 1.2, 0, Math.PI / 3),
+        girar(circulo(1.1, 0, 60), 1.2, 0, (2 * Math.PI) / 3),
+      ],
+      eletrons: [0, Math.PI / 3, (2 * Math.PI) / 3],
+    }),
+  },
+  toro: {
+    nome: "TORO",
+    fazer: () => {
+      const linhas = [];
+      for (let i = 0; i < 18; i++) {
+        const a = (i / 18) * Math.PI * 2;
+        linhas.push(circulo(0.35, 0, 24, "z").map(([x, y, z]) => [Math.cos(a) * (0.85 + x), y, Math.sin(a) * (0.85 + x)]));
+      }
+      for (let j = 0; j < 8; j++) {
+        const b = (j / 8) * Math.PI * 2;
+        linhas.push(circulo(0.85 + Math.cos(b) * 0.35, Math.sin(b) * 0.35, 48));
+      }
+      return { linhas };
+    },
+  },
+  coracao: {
+    nome: "CORAÇÃO",
+    fazer: () => {
+      const linhas = [];
+      const fatia = (k, z) => {
+        const pts = [];
+        for (let i = 0; i <= 80; i++) {
+          const t = (i / 80) * Math.PI * 2;
+          const x = 16 * Math.pow(Math.sin(t), 3);
+          const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+          pts.push([(x / 17) * k, (y / 17) * k + 0.1, z]);
+        }
+        return pts;
+      };
+      const zs = [-0.45, -0.3, -0.15, 0, 0.15, 0.3, 0.45];
+      for (const z of zs) linhas.push(fatia(Math.sqrt(1 - (z / 0.5) ** 2), z));
+      return { linhas };
+    },
+  },
+  diamante: {
+    nome: "DIAMANTE",
+    fazer: () => {
+      const topo = circulo(0.55, 0.45, 8), cinta = circulo(1, 0.15, 8), ponta = [0, -1.1, 0];
+      const linhas = [topo, cinta];
+      for (let i = 0; i < 8; i++) { linhas.push([topo[i], cinta[i]]); linhas.push([cinta[i], ponta]); }
+      return { linhas };
+    },
+  },
+  foguete: {
+    nome: "FOGUETE",
+    fazer: () => {
+      const linhas = [];
+      for (const y of [-0.8, -0.3, 0.2, 0.6]) linhas.push(circulo(0.3, y, 24));
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        linhas.push([[Math.cos(a) * 0.3, -0.8, Math.sin(a) * 0.3], [Math.cos(a) * 0.3, 0.6, Math.sin(a) * 0.3], [0, 1.2, 0]]);
+      }
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        const c = Math.cos(a), s2 = Math.sin(a);
+        linhas.push([[c * 0.3, -0.3, s2 * 0.3], [c * 0.7, -1.0, s2 * 0.7], [c * 0.3, -0.8, s2 * 0.3]]);
+      }
+      return { linhas };
+    },
+  },
+  galaxia: {
+    nome: "GALÁXIA",
+    fazer: () => {
+      const pontos = [];
+      let semente = 7;
+      const aleatorio = () => ((semente = (semente * 9301 + 49297) % 233280) / 233280);
+      for (let i = 0; i < 700; i++) {
+        const braco = i % 3;
+        const r = Math.pow(aleatorio(), 0.6) * 1.3;
+        const a = r * 3.2 + (braco * Math.PI * 2) / 3 + (aleatorio() - 0.5) * 0.5;
+        pontos.push([Math.cos(a) * r, (aleatorio() - 0.5) * 0.12 * (1.4 - r), Math.sin(a) * r]);
+      }
+      return { linhas: [], pontos };
+    },
+  },
+};
+
+// Como o Jarvis fala o nome de cada forma.
+const FALA_FORMA = {"esfera": "uma esfera", "planeta": "um planeta", "terra": "a Terra", "cubo": "um cubo", "piramide": "uma pirâmide", "dna": "o DNA", "atomo": "um átomo", "toro": "um toro", "coracao": "um coração", "diamante": "um diamante", "foguete": "um foguete", "galaxia": "uma galáxia"};
+
+// Palavras faladas → forma.
+const PALAVRAS_HOLO = [
+  [/planeta|saturno|jupiter/, "planeta"],
+  [/terra|mundo|globo/, "terra"],
+  [/esfera|bola/, "esfera"],
+  [/cubo|caixa|quadrado/, "cubo"],
+  [/piramide|triangulo/, "piramide"],
+  [/dna|genetic|helice/, "dna"],
+  [/atomo|atomic|molecul/, "atomo"],
+  [/toro|rosquinha|donut|anel/, "toro"],
+  [/coracao|amor/, "coracao"],
+  [/diamante|cristal|joia/, "diamante"],
+  [/foguete|nave|espacial/, "foguete"],
+  [/galaxia|estrela|universo|via lactea/, "galaxia"],
+];
+
+let holo = null; // { forma, nome, inicio, ate, lista }
+
+function mostrarHolograma(chave) {
+  const f = FORMAS[chave];
+  holo = { ...f.fazer(), nome: f.nome, inicio: performance.now(), ate: performance.now() + 45000 };
+}
+
+function mostrarHologramaDeTexto(titulo, linhas) {
+  holo = { linhas: [], texto: linhas, nome: titulo, inicio: performance.now(), ate: performance.now() + 45000 };
+}
+
+function fecharHolograma() {
+  holo = null;
+}
+
+// Desenha a projeção: arame girando, montagem rápida ao aparecer, cintilação,
+// linhas de varredura e um cone de luz saindo do núcleo.
+function desenharHolograma(t, cx, cy, R, dpr) {
+  if (!holo) return false;
+  const agora = performance.now();
+  if (agora > holo.ate) { holo = null; return false; }
+  const idade = (agora - holo.inicio) / 1000;
+  const monta = Math.min(1, idade / 1.2);
+  const sumindo = Math.max(0, Math.min(1, (holo.ate - agora) / 800));
+  const pisca = 0.82 + 0.18 * Math.sin(t / 37) * Math.sin(t / 91) + (Math.random() < 0.02 ? -0.4 : 0);
+  const alfa = Math.max(0, pisca) * sumindo;
+  const cor = [120, 225, 255];
+  const escala = R * 2.1;
+  const ay = reduzirMovimento ? 0.4 : t * 0.0006;
+  const ax = 0.32 + (reduzirMovimento ? 0 : Math.sin(t * 0.0004) * 0.08);
+  const hy = cy - R * 0.3;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+
+  // base do projetor: um disco de luz embaixo da projeção
+  const by = hy + escala * 1.08;
+  const base = ctx.createRadialGradient(cx, by, 0, cx, by, escala * 0.9);
+  base.addColorStop(0, rgba(cor, 0.22 * alfa));
+  base.addColorStop(1, rgba(cor, 0));
+  ctx.fillStyle = base;
+  ctx.beginPath();
+  ctx.ellipse(cx, by, escala * 0.9, escala * 0.16, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = rgba(cor, 0.35 * alfa);
+  ctx.lineWidth = 1 * dpr;
+  ctx.beginPath();
+  ctx.ellipse(cx, by, escala * 0.6, escala * 0.1, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const projetar = ([x, y, z]) => {
+    const [x2, y2, z2] = girar([[x, y, z]], ax, ay, 0)[0];
+    const p = 3.2 / (3.2 + z2);
+    return [cx + x2 * escala * p, hy - y2 * escala * p, z2];
+  };
+
+  ctx.shadowColor = rgba(cor, 0.9);
+  ctx.shadowBlur = 10 * dpr;
+  ctx.lineWidth = 1.3 * dpr;
+  if (holo.linhas.length) {
+    const total = holo.linhas.length;
+    const ate = Math.ceil(total * monta);
+    for (let k = 0; k < ate; k++) {
+      const linha = holo.linhas[k];
+      ctx.beginPath();
+      let fundo = 0;
+      linha.forEach((ponto, i) => {
+        const [px, py, pz] = projetar(ponto);
+        fundo += pz;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      // a parte de trás fica mais apagada: dá profundidade
+      const z = fundo / linha.length;
+      ctx.strokeStyle = rgba(cor, (0.35 + 0.45 * (1 - (z + 1) / 2)) * alfa);
+      ctx.stroke();
+    }
+  }
+  if (holo.pontos) {
+    const n = Math.ceil(holo.pontos.length * monta);
+    for (let i = 0; i < n; i++) {
+      const [px, py, pz] = projetar(holo.pontos[i]);
+      ctx.fillStyle = rgba(cor, (0.4 + 0.5 * (1 - (pz + 1) / 2)) * alfa);
+      ctx.fillRect(px, py, 1.6 * dpr, 1.6 * dpr);
+    }
+  }
+  if (holo.eletrons) {
+    holo.eletrons.forEach((rot, i) => {
+      const a = t * 0.003 + i * 2.1;
+      const p = girar([[Math.cos(a) * 1.1, 0, Math.sin(a) * 1.1]], 1.2, 0, rot)[0];
+      const [px, py] = projetar(p);
+      ctx.fillStyle = rgba([255, 255, 255], 0.9 * alfa);
+      ctx.beginPath();
+      ctx.arc(px, py, 3.5 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+  if (holo.texto) {
+    const largura = Math.min(escala * 2.4, canvas.width * 0.8);
+    const altura = (holo.texto.length + 1.6) * 26 * dpr;
+    const x0 = cx - largura / 2, y0 = hy - altura / 2;
+    ctx.strokeStyle = rgba(cor, 0.7 * alfa);
+    ctx.strokeRect(x0, y0, largura, altura * monta);
+    ctx.font = `${15 * dpr}px ${getComputedStyle(document.body).getPropertyValue("--mono")}`;
+    ctx.fillStyle = rgba(cor, 0.95 * alfa);
+    ctx.textAlign = "left";
+    holo.texto.slice(0, Math.ceil(holo.texto.length * monta)).forEach((l, i) => {
+      const txt = l.length > 46 ? l.slice(0, 45) + "…" : l;
+      ctx.fillText(txt, x0 + 18 * dpr, y0 + (i + 1.4) * 26 * dpr);
+    });
+  }
+
+  // varredura e nome
+  ctx.shadowBlur = 0;
+  const yv = hy - escala + ((t / 8) % (escala * 2));
+  ctx.fillStyle = rgba(cor, 0.08 * alfa);
+  ctx.fillRect(cx - escala * 1.2, yv, escala * 2.4, 2 * dpr);
+  ctx.font = `${12 * dpr}px ${getComputedStyle(document.body).getPropertyValue("--mono")}`;
+  ctx.textAlign = "center";
+  ctx.fillStyle = rgba(cor, 0.85 * alfa);
+  ctx.fillText("HOLOGRAMA · " + holo.nome, cx, hy - escala * 1.18);
+  ctx.restore();
+  return true;
+}
+
+// ---------- abrir sites ----------
+
+const SITES = [
+  [/^(?:o\s+)?(?:meu\s+)?(?:direct|dm|mensagens?|chat)\s+(?:do\s+)?insta(?:gram)?$|^(?:as\s+)?(?:minhas\s+)?mensagens\s+do\s+insta(?:gram)?$/, "https://www.instagram.com/direct/inbox/", "as mensagens do Instagram"],
+  [/insta(?:gram)?/, "https://www.instagram.com/", "o Instagram"],
+  [/youtube/, "https://www.youtube.com/", "o YouTube"],
+  [/whats(?:app|zap)?|zap/, "https://web.whatsapp.com/", "o WhatsApp"],
+  [/gmail|e-?mail/, "https://mail.google.com/", "o Gmail"],
+  [/spotify|musica/, "https://open.spotify.com/", "o Spotify"],
+  [/tiktok/, "https://www.tiktok.com/", "o TikTok"],
+  [/facebook|face/, "https://www.facebook.com/", "o Facebook"],
+  [/twitter|^x$/, "https://x.com/", "o X"],
+  [/netflix/, "https://www.netflix.com/", "a Netflix"],
+  [/github/, "https://github.com/", "o GitHub"],
+  [/google|navegador/, "https://www.google.com/", "o Google"],
+  [/agenda|calendario/, "https://calendar.google.com/", "a agenda do Google"],
+  [/maps|mapa/, "https://www.google.com/maps", "o Google Maps"],
+];
+
+// Abre numa aba nova. Pedido por voz não conta como clique, e o Chrome pode
+// bloquear: aí aparece um link para clicar e a dica de liberar os pop-ups.
+function abrirSite(url, nome) {
+  // Sem "noopener" no pedido: com ele o Chrome sempre devolve null e não daria para
+  // saber se abriu. O vínculo com esta página é cortado logo em seguida.
+  let janela = null;
+  try { janela = window.open(url, "_blank"); } catch (e) { janela = null; }
+  if (janela) { try { janela.opener = null; } catch (e) { /* outra origem */ } }
+  const abriu = !!janela;
+  setTimeout(() => {
+    if (!abriu) {
+      const el = $("legenda");
+      const aviso = document.createElement("div");
+      aviso.className = "erro";
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = "Abrir " + nome.replace(/^(o|a|as|os)\s+/, "");
+      aviso.append("O Chrome bloqueou a janela. ", a, ' — para abrir sozinho da próxima vez, clique no ícone de pop-up bloqueado na barra de endereço e escolha "Sempre permitir".');
+      el.appendChild(aviso);
+    }
+  }, 50);
+}
+
 // ---------- calendário ----------
 
 function calendario() {
@@ -3303,6 +3718,8 @@ const COMANDOS = [
   ["REVISAR PENDÊNCIAS", "Revise minhas pendências e diga o próximo passo de cada uma, em poucas palavras."],
   ["ME MOTIVA", "Me dá um empurrão rápido para começar, no seu estilo."],
   ["CURIOSIDADE", "Me conta uma curiosidade interessante em duas frases."],
+  ["HOLOGRAMA", "Jarvis, mostra um holograma surpresa"],
+  ["INSTAGRAM", "Abre meu Instagram"],
 ];
 for (const [rotulo, pedido] of COMANDOS) {
   const b = document.createElement("button");
@@ -3393,6 +3810,8 @@ function desenhar(t) {
   ctx.clearRect(0, 0, w, h);
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
+  // Com um holograma no ar, o núcleo vira só o projetor, mais apagado.
+  if (holo) ctx.globalAlpha = 0.45;
 
   const brilho = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 3.2);
   brilho.addColorStop(0, rgba(cor, 0.16 + nivel * 0.25));
@@ -3464,6 +3883,7 @@ function desenhar(t) {
   anel(cx, cy, R * 0.8, 1.2 * dpr, rgba(cor, 0.5), 1, 0, 1);
 
   ctx.restore();
+  desenharHolograma(t, cx, cy, R, dpr);
   requestAnimationFrame(desenhar);
 }
 
