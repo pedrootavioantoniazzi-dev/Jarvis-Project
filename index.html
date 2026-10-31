@@ -1,0 +1,1037 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>J.A.R.V.I.S.</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%2302060c' stroke='%235fd4ff' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='12' fill='%235fd4ff'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #02060c;
+    --ciano: #5fd4ff;
+    --ciano-fraco: rgba(95, 212, 255, 0.35);
+    --ciano-linha: rgba(95, 212, 255, 0.18);
+    --ambar: #ffb547;
+    --vermelho: #ff5f6d;
+    --verde: #5dffa8;
+    --texto: #cdeeff;
+    --texto-fraco: rgba(205, 238, 255, 0.55);
+    --fonte: "Rajdhani", "Orbitron", "Segoe UI", "Ubuntu", system-ui, sans-serif;
+    --mono: "Cascadia Mono", "Consolas", "JetBrains Mono", "DejaVu Sans Mono", monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    color: var(--texto);
+    font-family: var(--fonte);
+    background: radial-gradient(ellipse at 50% 45%, #08263a 0%, #04121f 38%, var(--bg) 75%);
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+      repeating-linear-gradient(0deg, rgba(95, 212, 255, 0.035) 0 1px, transparent 1px 4px),
+      linear-gradient(90deg, var(--ciano-linha) 1px, transparent 1px) 0 0 / 80px 80px,
+      linear-gradient(0deg, var(--ciano-linha) 1px, transparent 1px) 0 0 / 80px 80px;
+    opacity: 0.25;
+    mask-image: radial-gradient(ellipse at center, #000 30%, transparent 80%);
+  }
+
+  canvas#hud { position: fixed; inset: 0; width: 100%; height: 100%; cursor: pointer; }
+
+  .titulo { position: fixed; top: 22px; left: 0; right: 0; text-align: center; pointer-events: none; }
+  .titulo h1 {
+    margin: 0; font-size: 26px; font-weight: 600; letter-spacing: 0.7em; padding-left: 0.7em;
+    color: var(--ciano); text-shadow: 0 0 12px var(--ciano-fraco);
+  }
+  .titulo p { margin: 4px 0 0; font-size: 11px; letter-spacing: 0.35em; color: var(--texto-fraco); text-transform: uppercase; }
+
+  .coluna {
+    position: fixed; top: 24px; width: 260px; max-height: calc(100vh - 150px);
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .coluna.esq { left: 24px; }
+  .coluna.dir { right: 24px; }
+
+  .painel {
+    position: relative; min-height: 0; padding: 12px 16px;
+    border: 1px solid var(--ciano-linha); background: rgba(4, 18, 31, 0.55); backdrop-filter: blur(4px);
+    font-size: 13px; letter-spacing: 0.08em;
+    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+  }
+  .painel h2 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.3em; color: var(--ciano); display: flex; justify-content: space-between; }
+  .painel h2 span { color: var(--texto-fraco); letter-spacing: 0.1em; }
+  .relogio { font-family: var(--mono); font-size: 30px; color: var(--ciano); text-shadow: 0 0 10px var(--ciano-fraco); font-variant-numeric: tabular-nums; }
+  .data { color: var(--texto-fraco); margin-bottom: 10px; }
+  .linha { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 2px 0; }
+  .linha > span:first-child { color: var(--texto-fraco); }
+  .linha select {
+    max-width: 150px; min-width: 0; padding: 2px 4px; border: 1px solid var(--ciano-linha);
+    background: rgba(2, 8, 14, 0.85); color: var(--texto); font: 12px var(--mono);
+  }
+  .ponto { display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: #36505f; vertical-align: middle; }
+  .ponto.ok { background: var(--verde); box-shadow: 0 0 8px var(--verde); }
+  .ponto.espera { background: var(--ambar); box-shadow: 0 0 8px var(--ambar); }
+  .ponto.erro { background: var(--vermelho); box-shadow: 0 0 8px var(--vermelho); }
+  details.ajustes { margin-top: 8px; color: var(--texto-fraco); }
+  details.ajustes summary { cursor: pointer; font-size: 11px; letter-spacing: 0.2em; }
+  details.ajustes label { display: block; margin-top: 6px; font-size: 12px; letter-spacing: 0.04em; }
+  details.ajustes input {
+    width: 100%; margin-top: 3px; height: 28px; padding: 0 6px; border: 1px solid var(--ciano-linha);
+    background: rgba(2, 8, 14, 0.85); color: var(--texto); font: 12px var(--mono); outline: none;
+  }
+
+  /* pendências */
+  .painel.tarefas { display: flex; flex-direction: column; flex: 1 1 auto; }
+  .nova { display: flex; gap: 6px; margin-bottom: 8px; }
+  .nova input {
+    flex: 1; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--ciano-linha);
+    background: rgba(2, 8, 14, 0.7); color: var(--texto); font: 14px var(--fonte); outline: none;
+  }
+  .nova input:focus { border-color: var(--ciano); }
+  .nova button, .comandos button {
+    border: 1px solid var(--ciano-linha); background: rgba(95, 212, 255, 0.08);
+    color: var(--ciano); font: 600 11px var(--fonte); letter-spacing: 0.14em; cursor: pointer;
+  }
+  .nova button { padding: 0 10px; }
+  .nova button:hover, .comandos button:hover { border-color: var(--ciano); background: rgba(95, 212, 255, 0.16); }
+  .lista { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
+  .lista li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-left: 2px solid var(--ciano); background: rgba(95, 212, 255, 0.05); }
+  .lista li.feita { border-left-color: #36505f; opacity: 0.55; }
+  .lista li.feita .txt { text-decoration: line-through; }
+  .lista li.vazia { border: 0; background: none; color: var(--texto-fraco); font-size: 13px; letter-spacing: 0.02em; }
+  .lista button { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+  .lista .marca { width: 16px; height: 16px; flex: none; border: 1px solid var(--ciano); color: var(--verde); font-size: 11px; line-height: 14px; }
+  .lista .txt { flex: 1; min-width: 0; text-align: left; font-size: 14px; letter-spacing: 0.02em; overflow-wrap: anywhere; }
+  .lista .tira { color: var(--texto-fraco); font-size: 12px; }
+  .lista .tira:hover { color: var(--vermelho); }
+  .progresso { height: 3px; margin-top: 8px; background: rgba(95, 212, 255, 0.12); }
+  .progresso i { display: block; height: 100%; width: 0; background: var(--ciano); box-shadow: 0 0 8px var(--ciano-fraco); transition: width 0.4s; }
+
+  /* calendário */
+  .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; font-family: var(--mono); font-size: 11px; }
+  .cal .sem { color: var(--texto-fraco); padding-bottom: 2px; }
+  .cal .dia { padding: 3px 0; border: 1px solid rgba(95, 212, 255, 0.08); }
+  .cal .dia.vazio { border-color: transparent; }
+  .cal .dia.fds { color: var(--ciano); }
+  .cal .dia.hoje { background: var(--ciano); color: var(--bg); font-weight: 700; box-shadow: 0 0 8px var(--ciano-fraco); }
+
+  .comandos { display: grid; gap: 6px; }
+  .comandos button { height: 30px; text-align: left; padding: 0 10px; }
+
+  .estado {
+    position: fixed; left: 0; right: 0; top: calc(42% + 28vmin + 10px); text-align: center;
+    font-size: 15px; font-weight: 600; letter-spacing: 0.45em; padding-left: 0.45em;
+    color: var(--ciano); text-shadow: 0 0 10px var(--ciano-fraco); pointer-events: none;
+  }
+
+  .legenda {
+    position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
+    width: min(900px, calc(100% - 32px)); max-height: 22vh; overflow-y: auto; text-align: center;
+  }
+  .legenda .voce { color: var(--texto-fraco); font-size: 16px; margin-bottom: 6px; }
+  .legenda .jarvis { font-size: 20px; line-height: 1.4; text-shadow: 0 0 8px rgba(0, 0, 0, 0.9); }
+  .legenda .erro { color: var(--vermelho); font-size: 16px; }
+  .legenda code { font-family: var(--mono); color: var(--ciano); }
+  .legenda a { color: var(--ciano); }
+  .legenda strong { color: #fff; }
+
+  .controles {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    width: min(760px, calc(100% - 32px)); display: flex; gap: 8px; align-items: center;
+  }
+  .controles input[type="text"] {
+    flex: 1; min-width: 0; height: 44px; padding: 0 14px; border: 1px solid var(--ciano-linha);
+    background: rgba(4, 18, 31, 0.75); color: var(--texto); font: 16px var(--fonte); letter-spacing: 0.04em; outline: none;
+  }
+  .controles input[type="text"]:focus { border-color: var(--ciano); box-shadow: 0 0 10px var(--ciano-fraco); }
+  .controles button {
+    height: 44px; padding: 0 14px; border: 1px solid var(--ciano-linha); background: rgba(4, 18, 31, 0.75);
+    color: var(--ciano); font: 600 12px var(--fonte); letter-spacing: 0.18em; cursor: pointer; white-space: nowrap;
+  }
+  .controles button:hover { border-color: var(--ciano); }
+  .controles button[aria-pressed="true"] { background: rgba(95, 212, 255, 0.16); border-color: var(--ciano); }
+  .controles button#mic { width: 52px; padding: 0; font-size: 20px; }
+
+  .dica { position: fixed; right: 24px; bottom: 32px; font-size: 11px; letter-spacing: 0.15em; color: var(--texto-fraco); pointer-events: none; }
+
+  button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--ciano); outline-offset: 2px; }
+
+  @media (min-width: 901px) { .legenda { width: min(900px, calc(100% - 620px)); } }
+  @media (max-width: 1300px) { .dica { display: none; } }
+  @media (max-width: 900px) { .coluna { display: none; } }
+  @media (max-width: 520px) {
+    .controles button { padding: 0 8px; letter-spacing: 0.08em; }
+    .controles button#mic { width: 44px; }
+    .legenda .jarvis { font-size: 17px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="hud" aria-label="Núcleo do Jarvis. Clique para falar."></canvas>
+
+<header class="titulo">
+  <h1>J.A.R.V.I.S.</h1>
+  <p>Just A Rather Very Intelligent System</p>
+</header>
+
+<aside class="coluna esq">
+  <section class="painel" aria-label="Sistema">
+    <div class="relogio" id="relogio">--:--:--</div>
+    <div class="data" id="data"></div>
+    <h2>SISTEMA</h2>
+    <div class="linha"><span>Modelo</span><select id="sel-modelo" aria-label="Modelo de IA"><option value="">—</option></select></div>
+    <div class="linha"><span>Voz</span><select id="sel-voz" aria-label="Voz do Jarvis"><option value="">—</option></select></div>
+    <details class="ajustes">
+      <summary>AJUSTES</summary>
+      <label>Endereço do Ollama
+        <input type="text" id="ollama-url" spellcheck="false" autocomplete="off">
+      </label>
+    </details>
+  </section>
+
+  <section class="painel tarefas" aria-labelledby="h-tarefas">
+    <h2 id="h-tarefas">PENDÊNCIAS <span id="tarefas-conta"></span></h2>
+    <div class="nova">
+      <input type="text" id="nova-tarefa" placeholder="Nova tarefa…" aria-label="Nova tarefa" autocomplete="off">
+      <button type="button" id="add-tarefa">ADD</button>
+    </div>
+    <ul class="lista" id="lista-tarefas"></ul>
+    <div class="progresso" aria-hidden="true"><i id="tarefas-barra"></i></div>
+  </section>
+</aside>
+
+<aside class="coluna dir">
+  <section class="painel" aria-label="Status">
+    <h2>STATUS</h2>
+    <div class="linha"><span>Cérebro (Ollama)</span><span><i class="ponto" id="st-cerebro"></i></span></div>
+    <div class="linha"><span>Ouvido</span><span><i class="ponto" id="st-ouvido"></i></span></div>
+    <div class="linha"><span>Voz</span><span><i class="ponto" id="st-voz"></i></span></div>
+    <div class="linha"><span>Memória</span><span id="st-memoria" style="font-family: var(--mono); font-size: 12px">0</span></div>
+  </section>
+
+  <section class="painel" aria-labelledby="h-cal">
+    <h2 id="h-cal">CALENDÁRIO <span id="cal-mes"></span></h2>
+    <div class="cal" id="cal"></div>
+  </section>
+
+  <section class="painel" aria-labelledby="h-cmd">
+    <h2 id="h-cmd">COMANDOS</h2>
+    <div class="comandos" id="comandos"></div>
+  </section>
+</aside>
+
+<div class="estado" id="estado" aria-live="polite">INICIANDO</div>
+
+<div class="legenda" id="legenda" aria-live="polite"></div>
+
+<form class="controles" id="form" autocomplete="off">
+  <button type="button" id="mic" aria-label="Falar com o Jarvis" title="Falar (Espaço)">🎙</button>
+  <input type="text" id="texto" placeholder="Escreva para o Jarvis…">
+  <button type="button" id="continuo" aria-pressed="true" title="Depois de responder, o Jarvis volta a ouvir sozinho">CONVERSA</button>
+  <button type="button" id="mudo" aria-pressed="false" title="Desliga a voz do Jarvis">MUDO</button>
+</form>
+
+<div class="dica">ESPAÇO: FALAR · ESC: PARAR</div>
+
+<script>
+"use strict";
+
+// Este site roda inteiro no navegador. A voz usa o próprio navegador
+// (Chrome ou Edge) e o cérebro é o Ollama rodando no seu computador.
+
+const $ = (id) => document.getElementById(id);
+
+const ROTULOS = {
+  idle: "TOQUE PARA FALAR",
+  listening: "OUVINDO",
+  thinking: "PENSANDO",
+  speaking: "FALANDO",
+};
+
+const PERSONA = [
+  "Você é o Jarvis, o assistente pessoal de IA do usuário, rodando no computador dele.",
+  "Responda sempre em português do Brasil, a menos que o usuário peça outro idioma.",
+  "Seja educado, leal e eficiente, com um humor leve e discreto. Calmo sob pressão. Vá direto ao ponto.",
+  "Respostas curtas por padrão; dê detalhes só quando o usuário pedir.",
+  "Suas respostas são lidas em voz alta: fale de forma natural e evite tabelas, emojis e formatação pesada.",
+  "Você não tem acesso à internet: se perguntarem notícias, clima ou preços de hoje, diga que não consegue ver isso daqui.",
+  "Nunca invente fatos. Se não souber, diga que não sabe.",
+].join("\n");
+
+// ---------- preferências ----------
+
+function ler(chave, padrao) {
+  try { const v = localStorage.getItem(chave); return v === null ? padrao : v; } catch (e) { return padrao; }
+}
+function gravar(chave, valor) {
+  try { localStorage.setItem(chave, valor); } catch (e) { /* sem armazenamento */ }
+}
+function lerJson(chave) {
+  try { const v = JSON.parse(localStorage.getItem(chave) || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+}
+
+const parametroOllama = new URLSearchParams(location.search).get("ollama");
+let OLLAMA = (parametroOllama || ler("jarvis.ollama", "http://localhost:11434")).replace(/\/+$/, "");
+let modelo = ler("jarvis.modelo", "");
+let nomeVoz = ler("jarvis.voz", "");
+let continuo = ler("jarvis.continuo", "1") === "1";
+let mudo = ler("jarvis.mudo", "0") === "1";
+
+let estado = "idle";
+let cerebroOk = false;
+const historico = [];
+let perguntaPendente = null;
+let abortador = null;
+let reconhecedor = null;
+let nivel = 0;
+let nivelFala = 0;
+
+// ---------- estado e legenda ----------
+
+function mudarEstado(novo, extra = "") {
+  estado = novo;
+  $("estado").textContent = extra || ROTULOS[novo] || "";
+}
+
+function escapar(texto) {
+  return String(texto).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function formatar(texto) {
+  return escapar(texto)
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\n/g, "<br>");
+}
+
+// `erro` é HTML confiável escrito aqui no código; o resto é escapado.
+function legenda(voce, jarvis, erro) {
+  const el = $("legenda");
+  let html = "";
+  if (voce) html += `<div class="voce">Você: ${escapar(voce)}</div>`;
+  if (jarvis) html += `<div class="jarvis">${formatar(jarvis)}</div>`;
+  if (erro) html += `<div class="erro">${erro}</div>`;
+  el.innerHTML = html;
+  el.scrollTop = el.scrollHeight;
+}
+
+const AJUDA_OLLAMA =
+  'Meu cérebro (Ollama) não está respondendo. Instale em <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com/download</a>, ' +
+  "rode <code>ollama pull qwen3.5:2b</code> e libere este site com <code>setx OLLAMA_ORIGINS *</code> " +
+  "(depois feche e abra o Ollama de novo). Pendências, hora e memória funcionam mesmo assim.";
+
+// ---------- ouvir (reconhecimento de voz do navegador) ----------
+
+const Reconhecimento = window.SpeechRecognition || window.webkitSpeechRecognition;
+const ouvidoOk = !!Reconhecimento;
+
+function ouvir() {
+  if (estado !== "idle") return;
+  if (!ouvidoOk) {
+    legenda("", "", "Este navegador não reconhece voz. Use o Google Chrome ou o Microsoft Edge (o Brave não tem essa função).");
+    return;
+  }
+  const rec = new Reconhecimento();
+  rec.lang = "pt-BR";
+  rec.interimResults = true;
+  rec.continuous = false;
+  rec.maxAlternatives = 1;
+  let final = "";
+  rec.cancelado = false;
+
+  rec.onresult = (e) => {
+    let parcial = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) final += r[0].transcript;
+      else parcial += r[0].transcript;
+    }
+    nivel = Math.max(nivel, 0.6);
+    legenda((final + " " + parcial).trim(), "");
+  };
+  rec.onspeechstart = () => { nivel = Math.max(nivel, 0.5); };
+  rec.onerror = (e) => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      rec.cancelado = true;
+      legenda("", "", "Não consegui usar o microfone. Clique no cadeado ao lado do endereço do site e permita o microfone.");
+    } else if (e.error === "no-speech") {
+      rec.cancelado = true;
+      legenda("", "Não ouvi nada. Toque no núcleo quando quiser falar.");
+    } else if (e.error === "network") {
+      rec.cancelado = true;
+      legenda("", "", "O reconhecimento de voz precisa de internet. Confira a conexão e tente de novo.");
+    } else if (e.error !== "aborted") {
+      legenda("", "", "Erro no reconhecimento de voz: " + escapar(e.error));
+    }
+  };
+  rec.onend = () => {
+    if (reconhecedor === rec) reconhecedor = null;
+    const texto = final.trim();
+    if (rec.cancelado || !texto) {
+      if (estado === "listening") mudarEstado("idle");
+      return;
+    }
+    perguntar(texto, true);
+  };
+
+  reconhecedor = rec;
+  pararFala();
+  try {
+    rec.start();
+  } catch (e) {
+    reconhecedor = null;
+    legenda("", "", "Não consegui começar a ouvir: " + escapar(e.message || e));
+    return;
+  }
+  mudarEstado("listening");
+}
+
+function pararDeOuvir(manter) {
+  if (!reconhecedor) return;
+  if (!manter) reconhecedor.cancelado = true;
+  try { manter ? reconhecedor.stop() : reconhecedor.abort(); } catch (e) { /* já parou */ }
+}
+
+// ---------- pensar (Ollama) ----------
+
+function tirarDoHistorico(msg) {
+  const i = historico.lastIndexOf(msg);
+  if (i >= 0) historico.splice(i, 1);
+}
+
+function semPensamento(texto) {
+  return texto.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trimStart();
+}
+
+function contexto() {
+  const agora = new Date();
+  const partes = [PERSONA, "Agora é " + agora.toLocaleString("pt-BR", { dateStyle: "full", timeStyle: "short" }) + "."];
+  if (memoria.length) partes.push("O que você sabe sobre o usuário:\n" + memoria.map((m) => "- " + m).join("\n"));
+  const abertas = tarefas.filter((t) => !t.feita);
+  if (abertas.length) partes.push("Pendências atuais do usuário:\n" + abertas.map((t) => "- " + t.texto).join("\n"));
+  return { role: "system", content: partes.join("\n\n") };
+}
+
+async function perguntar(texto, porVoz) {
+  // Pedidos simples (tarefas, hora, memória) são resolvidos aqui, sem a IA.
+  const local = comandoLocal(texto);
+  if (local) {
+    legenda(texto, local);
+    abortador = new AbortController();
+    const sinalLocal = abortador.signal;
+    await falar(local, sinalLocal);
+    if (!sinalLocal.aborted && estado === "idle" && porVoz && continuo) ouvir();
+    return;
+  }
+
+  if (perguntaPendente) tirarDoHistorico(perguntaPendente);
+  const pergunta = { role: "user", content: texto };
+  perguntaPendente = pergunta;
+  historico.push(pergunta);
+  legenda(texto, "");
+  mudarEstado("thinking");
+  abortador = new AbortController();
+  const sinal = abortador.signal;
+
+  let resposta = "";
+  try {
+    if (!modelo) await atualizarCerebro();
+    if (!modelo) throw new Error("sem-modelo");
+    const r = await fetch(OLLAMA + "/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: modelo, messages: [contexto(), ...historico.slice(-20)], stream: true }),
+      signal: sinal,
+    });
+    if (!r.ok) {
+      let detalhe = r.status;
+      try { detalhe = (await r.json()).error || detalhe; } catch (e) { /* corpo não é JSON */ }
+      throw new Error(detalhe);
+    }
+    const leitor = r.body.getReader();
+    const decodificador = new TextDecoder();
+    let sobra = "";
+    let bruto = "";
+    for (;;) {
+      const { value, done } = await leitor.read();
+      if (done) break;
+      sobra += decodificador.decode(value, { stream: true });
+      const linhas = sobra.split("\n");
+      sobra = linhas.pop();
+      for (const linha of linhas) {
+        if (!linha.trim()) continue;
+        const j = JSON.parse(linha);
+        if (j.error) throw new Error(j.error);
+        if (j.message && j.message.content) {
+          bruto += j.message.content;
+          resposta = semPensamento(bruto);
+          if (resposta) legenda(texto, resposta);
+        }
+      }
+    }
+    resposta = semPensamento(bruto).trim();
+    if (perguntaPendente === pergunta) perguntaPendente = null;
+  } catch (e) {
+    tirarDoHistorico(pergunta);
+    if (perguntaPendente === pergunta) perguntaPendente = null;
+    if (e.name === "AbortError") return;
+    mudarEstado("idle");
+    if (e.message === "sem-modelo" && cerebroOk) {
+      legenda(texto, "", "O Ollama está ligado, mas não tem nenhum modelo. No Prompt de Comando, rode <code>ollama pull qwen3.5:2b</code>.");
+    } else if (e instanceof TypeError || e.message === "sem-modelo") {
+      legenda(texto, "", AJUDA_OLLAMA);
+    } else {
+      legenda(texto, "", "O Jarvis não conseguiu responder: " + escapar(e.message || e));
+    }
+    return;
+  }
+  historico.push({ role: "assistant", content: resposta });
+  legenda(texto, resposta || "(sem resposta)");
+  await falar(resposta, sinal);
+  if (!sinal.aborted && estado === "idle" && porVoz && continuo) ouvir();
+}
+
+// ---------- falar (voz do navegador) ----------
+
+let vozes = [];
+
+function carregarVozes() {
+  const todas = window.speechSynthesis ? speechSynthesis.getVoices() : [];
+  const pt = todas.filter((v) => /^pt(-|_|$)/i.test(v.lang));
+  // Brasil primeiro, e as vozes "Natural" (Edge) e masculinas antes.
+  const peso = (v) =>
+    (/pt[-_]BR/i.test(v.lang) ? 0 : 10) + (/natural|online/i.test(v.name) ? 0 : 3) + (/antonio|daniel|male|masculin/i.test(v.name) ? 0 : 1);
+  vozes = pt.sort((a, b) => peso(a) - peso(b));
+  const sel = $("sel-voz");
+  sel.textContent = "";
+  if (!vozes.length) {
+    sel.append(new Option("nenhuma em pt", ""));
+  } else {
+    for (const v of vozes) sel.append(new Option(v.name.replace(/^Microsoft\s+/, "").replace(/\s*-\s*Portuguese.*$/i, ""), v.name));
+    if (!vozes.some((v) => v.name === nomeVoz)) nomeVoz = vozes[0].name;
+    sel.value = nomeVoz;
+  }
+  ponto("st-voz", vozes.length ? "ok" : todas.length ? "espera" : "erro");
+}
+if (window.speechSynthesis) {
+  speechSynthesis.addEventListener("voiceschanged", carregarVozes);
+  carregarVozes();
+}
+$("sel-voz").addEventListener("change", (e) => { nomeVoz = e.target.value; gravar("jarvis.voz", nomeVoz); });
+
+function paraFala(texto) {
+  return texto
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+[.)])\s+/gm, "")
+    .replace(/[*_~|#]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// O Chrome corta falas longas, então fala frase por frase.
+function frases(texto) {
+  const partes = texto.match(/[^.!?…]+[.!?…]+|[^.!?…]+$/g) || [texto];
+  const blocos = [];
+  let atual = "";
+  for (const p of partes) {
+    if ((atual + p).length > 200 && atual) { blocos.push(atual.trim()); atual = ""; }
+    atual += p;
+  }
+  if (atual.trim()) blocos.push(atual.trim());
+  return blocos;
+}
+
+function pararFala() {
+  if (window.speechSynthesis) speechSynthesis.cancel();
+}
+
+function falarBloco(texto, sinal) {
+  return new Promise((resolve) => {
+    const u = new SpeechSynthesisUtterance(texto);
+    u.lang = "pt-BR";
+    const voz = vozes.find((v) => v.name === nomeVoz);
+    if (voz) { u.voice = voz; u.lang = voz.lang; }
+    u.rate = 1.05;
+    // Se a voz do sistema travar sem avisar o fim, segue em frente mesmo assim.
+    const limite = setTimeout(() => { pararFala(); resolve(); }, 4000 + texto.length * 150);
+    const fim = () => { clearTimeout(limite); resolve(); };
+    u.onboundary = () => { nivelFala = 1; };
+    u.onend = fim;
+    u.onerror = fim;
+    sinal.addEventListener("abort", () => { pararFala(); fim(); }, { once: true });
+    speechSynthesis.speak(u);
+  });
+}
+
+async function falar(texto, sinal) {
+  const limpo = paraFala(texto || "");
+  if (mudo || !window.speechSynthesis || !limpo) { mudarEstado("idle"); return; }
+  mudarEstado("speaking");
+  for (const bloco of frases(limpo)) {
+    if (sinal.aborted || estado !== "speaking") return;
+    await falarBloco(bloco, sinal);
+  }
+  if (!sinal.aborted && estado === "speaking") mudarEstado("idle");
+}
+
+// ---------- cancelar e controles ----------
+
+function parar() {
+  if (abortador) abortador.abort();
+  pararFala();
+  pararDeOuvir(false);
+  mudarEstado("idle");
+}
+
+function acaoPrincipal() {
+  if (estado === "idle") return ouvir();
+  if (estado === "listening") return pararDeOuvir(true);
+  if (estado === "speaking") { parar(); return ouvir(); }
+  if (estado === "thinking") return parar();
+}
+
+$("hud").addEventListener("click", acaoPrincipal);
+$("mic").addEventListener("click", acaoPrincipal);
+
+function enviarTexto(texto) {
+  texto = texto.trim();
+  if (!texto) return false;
+  if (estado !== "idle") parar();
+  perguntar(texto, false);
+  return true;
+}
+
+$("form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (enviarTexto($("texto").value)) $("texto").value = "";
+});
+
+function atualizarBotoes() {
+  $("continuo").setAttribute("aria-pressed", String(continuo));
+  $("mudo").setAttribute("aria-pressed", String(mudo));
+}
+$("continuo").addEventListener("click", () => { continuo = !continuo; gravar("jarvis.continuo", continuo ? "1" : "0"); atualizarBotoes(); });
+$("mudo").addEventListener("click", () => {
+  mudo = !mudo;
+  gravar("jarvis.mudo", mudo ? "1" : "0");
+  atualizarBotoes();
+  if (mudo && estado === "speaking") parar();
+});
+atualizarBotoes();
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { parar(); return; }
+  const campo = document.activeElement && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if (e.code === "Space" && !campo) {
+    e.preventDefault();
+    if (document.activeElement && /^(BUTTON|SUMMARY)$/.test(document.activeElement.tagName)) document.activeElement.blur();
+    acaoPrincipal();
+  }
+});
+
+// ---------- status do cérebro ----------
+
+function ponto(id, classe) {
+  $(id).className = "ponto" + (classe ? " " + classe : "");
+}
+
+async function atualizarCerebro() {
+  try {
+    const r = await fetch(OLLAMA + "/api/tags", { cache: "no-store" });
+    if (!r.ok) throw new Error(String(r.status));
+    const j = await r.json();
+    const nomes = (j.models || []).map((m) => m.name).filter((n) => !/embed/i.test(n));
+    cerebroOk = true;
+    const sel = $("sel-modelo");
+    const atual = Array.from(sel.options).map((o) => o.value).join("|");
+    if (atual !== nomes.join("|")) {
+      sel.textContent = "";
+      if (!nomes.length) sel.append(new Option("nenhum", ""));
+      for (const n of nomes) sel.append(new Option(n, n));
+    }
+    if (!nomes.includes(modelo)) modelo = nomes.find((n) => /qwen/i.test(n)) || nomes[0] || "";
+    sel.value = modelo;
+    ponto("st-cerebro", modelo ? "ok" : "espera");
+  } catch (e) {
+    cerebroOk = false;
+    ponto("st-cerebro", "erro");
+  }
+}
+$("sel-modelo").addEventListener("change", (e) => { modelo = e.target.value; gravar("jarvis.modelo", modelo); });
+
+$("ollama-url").value = OLLAMA;
+$("ollama-url").addEventListener("change", (e) => {
+  OLLAMA = (e.target.value.trim() || "http://localhost:11434").replace(/\/+$/, "");
+  e.target.value = OLLAMA;
+  gravar("jarvis.ollama", OLLAMA);
+  atualizarCerebro();
+});
+
+ponto("st-ouvido", ouvidoOk ? "ok" : "erro");
+
+// ---------- pendências ----------
+
+const CHAVE_TAREFAS = "jarvis.tarefas";
+let tarefas = lerJson(CHAVE_TAREFAS);
+
+function salvarTarefas() {
+  gravar(CHAVE_TAREFAS, JSON.stringify(tarefas));
+  desenharTarefas();
+}
+
+function semAcento(t) {
+  return t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+}
+
+function adicionarTarefa(texto) {
+  texto = texto.trim().replace(/[.!?]+$/, "");
+  if (!texto) return null;
+  const t = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), texto: texto.slice(0, 200), feita: false };
+  tarefas.push(t);
+  salvarTarefas();
+  return t;
+}
+
+function acharTarefa(ref) {
+  const n = semAcento(ref);
+  if (!n) return null;
+  return tarefas.find((t) => semAcento(t.texto) === n) || tarefas.find((t) => semAcento(t.texto).includes(n)) || null;
+}
+
+function desenharTarefas() {
+  const lista = $("lista-tarefas");
+  lista.textContent = "";
+  const ordem = [...tarefas].sort((a, b) => a.feita - b.feita);
+  if (!ordem.length) {
+    const li = document.createElement("li");
+    li.className = "vazia";
+    li.textContent = 'Nada pendente. Diga "adiciona tarefa…" ou escreva acima.';
+    lista.appendChild(li);
+  }
+  for (const t of ordem) {
+    const li = document.createElement("li");
+    if (t.feita) li.className = "feita";
+    const marca = document.createElement("button");
+    marca.className = "marca";
+    marca.textContent = t.feita ? "✓" : "";
+    marca.setAttribute("aria-label", t.feita ? "Reabrir tarefa" : "Concluir tarefa");
+    const txt = document.createElement("button");
+    txt.className = "txt";
+    txt.textContent = t.texto;
+    const alternar = () => { t.feita = !t.feita; salvarTarefas(); };
+    marca.onclick = alternar;
+    txt.onclick = alternar;
+    const tira = document.createElement("button");
+    tira.className = "tira";
+    tira.textContent = "✕";
+    tira.setAttribute("aria-label", "Remover tarefa");
+    tira.onclick = () => { tarefas = tarefas.filter((x) => x !== t); salvarTarefas(); };
+    li.append(marca, txt, tira);
+    lista.appendChild(li);
+  }
+  const abertas = tarefas.filter((t) => !t.feita).length;
+  $("tarefas-conta").textContent = abertas ? abertas + " ABERTA" + (abertas > 1 ? "S" : "") : "";
+  $("tarefas-barra").style.width = (tarefas.length ? Math.round(((tarefas.length - abertas) / tarefas.length) * 100) : 0) + "%";
+}
+
+function addDoCampo() {
+  if (adicionarTarefa($("nova-tarefa").value)) $("nova-tarefa").value = "";
+}
+$("add-tarefa").addEventListener("click", addDoCampo);
+$("nova-tarefa").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addDoCampo(); } });
+
+// ---------- memória ----------
+
+const CHAVE_MEMORIA = "jarvis.memoria";
+let memoria = lerJson(CHAVE_MEMORIA);
+
+function salvarMemoria() {
+  gravar(CHAVE_MEMORIA, JSON.stringify(memoria));
+  $("st-memoria").textContent = memoria.length;
+}
+
+// ---------- comandos resolvidos aqui mesmo ----------
+
+// Devolve a resposta, ou "" quando o pedido é para a IA.
+function comandoLocal(texto) {
+  const t = texto.trim().replace(/[.!?]+$/, "").replace(/^jarvis[,!\s]+/i, "");
+  const n = semAcento(t);
+  let m;
+
+  m = t.match(/^(?:adicion|anot|cri|coloc|bot|inclu)\w*\s+(?:uma\s+|a\s+)?(?:nova\s+)?(?:tarefa|pend[eê]ncia)\s*(?::|de|para)?\s*(.+)$/i);
+  if (m) {
+    const nova = adicionarTarefa(m[1]);
+    return nova ? `Anotado: ${nova.texto}.` : "";
+  }
+  m = t.match(/^conclu\w*\s+(?:a\s+)?(?:tarefa\s+)?(.+)$/i) || t.match(/^marc\w*\s+(?:a\s+)?(?:tarefa\s+)?(.+?)\s+como\s+(?:feita|conclu[ií]da|pronta)$/i);
+  if (m) {
+    const alvo = acharTarefa(m[1]);
+    if (!alvo) return `Não achei a tarefa "${m[1]}".`;
+    alvo.feita = true;
+    salvarTarefas();
+    return `Feito. Marquei "${alvo.texto}" como concluída.`;
+  }
+  m = t.match(/^(?:remov|apag|exclu|tir)\w*\s+(?:a\s+)?tarefa\s+(.+)$/i);
+  if (m) {
+    const alvo = acharTarefa(m[1]);
+    if (!alvo) return `Não achei a tarefa "${m[1]}".`;
+    tarefas = tarefas.filter((x) => x !== alvo);
+    salvarTarefas();
+    return `Removi "${alvo.texto}".`;
+  }
+  if (/^(?:quais\s+(?:s[aã]o\s+)?|lista\w*\s+|mostr\w*\s+|l[eê]\w*\s+)?(?:as\s+)?minhas\s+(?:tarefas|pend[eê]ncias)$/i.test(t)) {
+    const abertas = tarefas.filter((x) => !x.feita);
+    if (!abertas.length) return "Você não tem pendências. Tudo em dia.";
+    return `Você tem ${abertas.length} pendência${abertas.length > 1 ? "s" : ""}: ` + abertas.map((x) => x.texto).join("; ") + ".";
+  }
+
+  m = t.match(/^(?:lembr\w*|grav\w*|guard\w*|memoriz\w*)(?:-se)?\s+(?:que|de que|isso:?)\s+(.+)$/i);
+  if (m) {
+    const fato = m[1].trim();
+    if (fato) { memoria.push(fato.slice(0, 300)); salvarMemoria(); }
+    return "Pode deixar, vou lembrar.";
+  }
+  if (/^o\s+que\s+voc[eê]\s+(?:lembra|sabe)\s+(?:de|sobre)\s+mim$/.test(n.replace(/ê/g, "e"))) {
+    if (!memoria.length) return "Ainda não sei nada sobre você. Diga, por exemplo: lembra que meu aniversário é 10 de maio.";
+    return "Eu lembro que: " + memoria.join("; ") + ".";
+  }
+  if (/^(?:esque[cç]\w*|apag\w*)\s+(?:tudo|a\s+mem[oó]ria|sua\s+mem[oó]ria)/i.test(t)) {
+    memoria = [];
+    salvarMemoria();
+    return "Memória apagada.";
+  }
+
+  if (/^(?:que\s+horas?\s+s[aã]o|que\s+hora\s+[eé]|me\s+diz\s+as\s+horas)/i.test(t)) {
+    return "Agora são " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) + ".";
+  }
+  if (/^(?:que\s+dia\s+[eé]\s+hoje|qual\s+(?:[eé]\s+)?a\s+data(?:\s+de\s+hoje)?|que\s+data\s+[eé]\s+hoje)/i.test(t)) {
+    return "Hoje é " + new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) + ".";
+  }
+  return "";
+}
+
+// ---------- calendário ----------
+
+function calendario() {
+  const hoje = new Date();
+  const ano = hoje.getFullYear();
+  const mes = hoje.getMonth();
+  const primeiro = new Date(ano, mes, 1).getDay();
+  const dias = new Date(ano, mes + 1, 0).getDate();
+  $("cal-mes").textContent = hoje.toLocaleDateString("pt-BR", { month: "short", year: "numeric" }).replace(".", "").toUpperCase();
+  const cal = $("cal");
+  cal.textContent = "";
+  for (const s of ["D", "S", "T", "Q", "Q", "S", "S"]) {
+    const el = document.createElement("div");
+    el.className = "sem";
+    el.textContent = s;
+    cal.appendChild(el);
+  }
+  for (let i = 0; i < primeiro; i++) {
+    const el = document.createElement("div");
+    el.className = "dia vazio";
+    cal.appendChild(el);
+  }
+  for (let d = 1; d <= dias; d++) {
+    const el = document.createElement("div");
+    const sem = (primeiro + d - 1) % 7;
+    el.className = "dia" + (d === hoje.getDate() ? " hoje" : "") + (sem === 0 || sem === 6 ? " fds" : "");
+    el.textContent = d;
+    cal.appendChild(el);
+  }
+}
+
+// ---------- comandos rápidos ----------
+
+const COMANDOS = [
+  ["PLANEJAR MEU DIA", "Com base nas minhas pendências, monte um plano curto e priorizado para hoje."],
+  ["REVISAR PENDÊNCIAS", "Revise minhas pendências e diga o próximo passo de cada uma, em poucas palavras."],
+  ["ME MOTIVA", "Me dá um empurrão rápido para começar, no seu estilo."],
+  ["CURIOSIDADE", "Me conta uma curiosidade interessante em duas frases."],
+];
+for (const [rotulo, pedido] of COMANDOS) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = rotulo;
+  b.addEventListener("click", () => enviarTexto(pedido));
+  $("comandos").appendChild(b);
+}
+
+// ---------- relógio ----------
+
+function relogio() {
+  const agora = new Date();
+  $("relogio").textContent = agora.toLocaleTimeString("pt-BR");
+  const data = agora.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+  $("data").textContent = data.charAt(0).toUpperCase() + data.slice(1);
+}
+
+// ---------- núcleo animado ----------
+
+const canvas = $("hud");
+const ctx = canvas.getContext("2d");
+const reduzirMovimento = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function corDoEstado() {
+  if (!cerebroOk && estado === "idle") return [255, 181, 71];
+  if (estado === "thinking") return [255, 181, 71];
+  return [95, 212, 255];
+}
+
+function rgba(c, a) {
+  return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+}
+
+function redimensionar() {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(innerWidth * dpr);
+  canvas.height = Math.round(innerHeight * dpr);
+}
+addEventListener("resize", redimensionar);
+redimensionar();
+
+function anel(cx, cy, r, largura, cor, segmentos, giro, preenchido) {
+  const passo = (Math.PI * 2) / segmentos;
+  ctx.lineWidth = largura;
+  ctx.strokeStyle = cor;
+  for (let i = 0; i < segmentos; i++) {
+    const a = giro + i * passo;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, a, a + passo * preenchido);
+    ctx.stroke();
+  }
+}
+
+// Sem acesso ao som em si, as barras seguem uma onda que pulsa com a fala.
+function barra(i, t) {
+  if (estado === "speaking") return Math.max(0, Math.sin(i * 0.9 + t / 90) * Math.sin(i * 0.37 + t / 170)) * (0.4 + nivelFala * 0.6);
+  if (estado === "listening") return Math.max(0, Math.sin(i * 0.6 + t / 120)) * nivel * 0.9;
+  return 0;
+}
+
+function desenhar(t) {
+  const w = canvas.width;
+  const h = canvas.height;
+  const dpr = window.devicePixelRatio || 1;
+  const cx = w / 2;
+  const cy = h * 0.42;
+  const R = Math.min(w, h) * 0.12;
+  const vel = reduzirMovimento ? 0.25 : 1;
+  const cor = corDoEstado();
+
+  let alvo;
+  if (estado === "listening") alvo = 0.25 + 0.2 * Math.sin(t / 200);
+  else if (estado === "speaking") alvo = 0.35 + nivelFala * 0.4;
+  else if (estado === "thinking") alvo = 0.3 + 0.15 * Math.sin(t / 160);
+  else alvo = 0.08 + 0.05 * Math.sin(t / 900);
+  nivel += (alvo - nivel) * 0.12;
+  nivelFala *= 0.9;
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+
+  const brilho = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 3.2);
+  brilho.addColorStop(0, rgba(cor, 0.16 + nivel * 0.25));
+  brilho.addColorStop(1, rgba(cor, 0));
+  ctx.fillStyle = brilho;
+  ctx.fillRect(0, 0, w, h);
+
+  const ticks = 120;
+  const rr = R * 2.15;
+  ctx.lineWidth = 1 * dpr;
+  for (let i = 0; i < ticks; i++) {
+    const a = (i / ticks) * Math.PI * 2 + t * 0.00004 * vel;
+    const longo = i % 5 === 0;
+    const r2 = rr + (longo ? 12 : 5) * dpr;
+    ctx.strokeStyle = rgba(cor, longo ? 0.5 : 0.22);
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+    ctx.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
+    ctx.stroke();
+  }
+
+  const pensa = estado === "thinking" ? 4 : 1;
+  anel(cx, cy, R * 1.9, 2 * dpr, rgba(cor, 0.35), 3, -t * 0.0002 * vel * pensa, 0.28);
+  anel(cx, cy, R * 1.7, 6 * dpr, rgba(cor, 0.18 + nivel * 0.3), 24, t * 0.00035 * vel * pensa, 0.55);
+  anel(cx, cy, R * 1.52, 1.5 * dpr, rgba(cor, 0.5), 2, t * 0.0006 * vel * pensa, 0.4);
+  anel(cx, cy, R * 1.38, 3 * dpr, rgba(cor, 0.3), 60, -t * 0.00015 * vel, 0.5);
+
+  if (pensa > 1 && ctx.createConicGradient) {
+    const a = (t * 0.004 * vel) % (Math.PI * 2);
+    const varre = ctx.createConicGradient(a, cx, cy);
+    varre.addColorStop(0, rgba(cor, 0.35));
+    varre.addColorStop(0.12, rgba(cor, 0));
+    varre.addColorStop(1, rgba(cor, 0));
+    ctx.fillStyle = varre;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 2.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const barras = 96;
+  ctx.lineWidth = 2.5 * dpr;
+  ctx.lineCap = "round";
+  for (let i = 0; i < barras; i++) {
+    const a = (i / barras) * Math.PI * 2 - Math.PI / 2;
+    const espelho = i < barras / 2 ? i : barras - 1 - i;
+    const v = reduzirMovimento ? 0 : barra(espelho, t);
+    const len = R * 0.06 + v * R * 0.5 + nivel * R * 0.08;
+    const r1 = R * 1.12;
+    ctx.strokeStyle = rgba(cor, 0.35 + v * 0.6);
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+    ctx.lineTo(cx + Math.cos(a) * (r1 + len), cy + Math.sin(a) * (r1 + len));
+    ctx.stroke();
+  }
+
+  const rc = R * (0.62 + nivel * 0.28);
+  const nucleo = ctx.createRadialGradient(cx, cy, 0, cx, cy, rc);
+  nucleo.addColorStop(0, "rgba(255,255,255,0.95)");
+  nucleo.addColorStop(0.35, rgba(cor, 0.85));
+  nucleo.addColorStop(0.75, rgba(cor, 0.25));
+  nucleo.addColorStop(1, rgba(cor, 0));
+  ctx.fillStyle = nucleo;
+  ctx.beginPath();
+  ctx.arc(cx, cy, rc, 0, Math.PI * 2);
+  ctx.fill();
+
+  anel(cx, cy, R * 0.92, 7 * dpr, rgba(cor, 0.55 + nivel * 0.4), 10, -Math.PI / 2 + t * 0.0001 * vel, 0.7);
+  anel(cx, cy, R * 1.0, 1.2 * dpr, rgba(cor, 0.7), 1, 0, 1);
+  anel(cx, cy, R * 0.8, 1.2 * dpr, rgba(cor, 0.5), 1, 0, 1);
+
+  ctx.restore();
+  requestAnimationFrame(desenhar);
+}
+
+// ---------- início ----------
+
+relogio();
+setInterval(relogio, 1000);
+calendario();
+setInterval(calendario, 60 * 1000);
+desenharTarefas();
+salvarMemoria();
+requestAnimationFrame(desenhar);
+mudarEstado("idle");
+
+atualizarCerebro().then(() => {
+  if (cerebroOk) legenda("", "Às suas ordens. Toque no núcleo ou aperte Espaço para falar.");
+  else legenda("", "", AJUDA_OLLAMA);
+});
+setInterval(atualizarCerebro, 10000);
+</script>
+</body>
+</html>
