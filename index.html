@@ -426,6 +426,41 @@ function contexto() {
   return { role: "system", content: partes.join("\n\n") };
 }
 
+// Sem o "raciocínio" escondido dos modelos que pensam antes de responder: na
+// conversa ele só atrasa a resposta. Modelos sem essa opção recebem o pedido sem ela.
+let semThink = true;
+
+async function pedirAoCerebro(mensagens, sinal) {
+  for (;;) {
+    const corpo = { model: modelo, messages: mensagens, stream: true, keep_alive: "30m", options: { num_predict: 600 } };
+    if (semThink) corpo.think = false;
+    const r = await fetch(OLLAMA + "/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(corpo),
+      signal: sinal,
+    });
+    if (r.ok) return r;
+    let detalhe = String(r.status);
+    try { detalhe = (await r.json()).error || detalhe; } catch (e) { /* corpo não é JSON */ }
+    if (semThink && /think/i.test(detalhe)) { semThink = false; continue; }
+    throw new Error(detalhe);
+  }
+}
+
+// Carrega o modelo na memória assim que o cérebro aparece, para a primeira
+// pergunta não esperar por isso.
+let aquecido = "";
+function aquecer() {
+  if (!modelo || aquecido === modelo) return;
+  aquecido = modelo;
+  fetch(OLLAMA + "/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: modelo, keep_alive: "30m" }),
+  }).catch(() => { aquecido = ""; });
+}
+
 async function perguntar(texto, porVoz) {
   // Pedidos simples (tarefas, hora, memória) são resolvidos aqui, sem a IA.
   const local = comandoLocal(texto);
@@ -451,17 +486,7 @@ async function perguntar(texto, porVoz) {
   try {
     if (!modelo) await atualizarCerebro();
     if (!modelo) throw new Error("sem-modelo");
-    const r = await fetch(OLLAMA + "/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: modelo, messages: [contexto(), ...historico.slice(-20)], stream: true }),
-      signal: sinal,
-    });
-    if (!r.ok) {
-      let detalhe = r.status;
-      try { detalhe = (await r.json()).error || detalhe; } catch (e) { /* corpo não é JSON */ }
-      throw new Error(detalhe);
-    }
+    const r = await pedirAoCerebro([contexto(), ...historico.slice(-20)], sinal);
     const leitor = r.body.getReader();
     const decodificador = new TextDecoder();
     let sobra = "";
@@ -669,12 +694,13 @@ async function atualizarCerebro() {
     if (!nomes.includes(modelo)) modelo = nomes.find((n) => /qwen/i.test(n)) || nomes[0] || "";
     sel.value = modelo;
     ponto("st-cerebro", modelo ? "ok" : "espera");
+    aquecer();
   } catch (e) {
     cerebroOk = false;
     ponto("st-cerebro", "erro");
   }
 }
-$("sel-modelo").addEventListener("change", (e) => { modelo = e.target.value; gravar("jarvis.modelo", modelo); });
+$("sel-modelo").addEventListener("change", (e) => { modelo = e.target.value; gravar("jarvis.modelo", modelo); semThink = true; aquecer(); });
 
 $("ollama-url").value = OLLAMA;
 $("ollama-url").addEventListener("change", (e) => {
