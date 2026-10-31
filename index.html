@@ -332,12 +332,17 @@ const AJUDA_OLLAMA =
 // ---------- ouvir (reconhecimento de voz do navegador) ----------
 
 const Reconhecimento = window.SpeechRecognition || window.webkitSpeechRecognition;
-const ouvidoOk = !!Reconhecimento;
+// O Brave tem a função, mas ela sempre falha: o serviço de voz é bloqueado.
+const ehBrave = !!navigator.brave;
+const ouvidoOk = !!Reconhecimento && !ehBrave;
+const AVISO_NAVEGADOR = ehBrave
+  ? "O Brave não deixa reconhecer voz. Abra o Jarvis no Google Chrome ou no Microsoft Edge para falar com ele (por escrito funciona aqui)."
+  : "Este navegador não reconhece voz. Use o Google Chrome ou o Microsoft Edge.";
 
 function ouvir() {
   if (estado !== "idle") return;
   if (!ouvidoOk) {
-    legenda("", "", "Este navegador não reconhece voz. Use o Google Chrome ou o Microsoft Edge (o Brave não tem essa função).");
+    legenda("", "", AVISO_NAVEGADOR);
     return;
   }
   const rec = new Reconhecimento();
@@ -368,7 +373,7 @@ function ouvir() {
       legenda("", "Não ouvi nada. Toque no núcleo quando quiser falar.");
     } else if (e.error === "network") {
       rec.cancelado = true;
-      legenda("", "", "O reconhecimento de voz precisa de internet. Confira a conexão e tente de novo.");
+      legenda("", "", "O reconhecimento de voz falhou ao falar com o serviço de voz. Confira a internet; se estiver usando o Brave, abra no Chrome ou no Edge.");
     } else if (e.error !== "aborted") {
       legenda("", "", "Erro no reconhecimento de voz: " + escapar(e.error));
     }
