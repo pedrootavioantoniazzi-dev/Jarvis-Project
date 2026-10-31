@@ -140,8 +140,8 @@
   .cal .dia.fds { color: var(--ciano); }
   .cal .dia.hoje { background: var(--ciano); color: var(--bg); font-weight: 700; box-shadow: 0 0 8px var(--ciano-fraco); }
 
-  .comandos { display: grid; gap: 6px; }
-  .comandos button { height: 30px; text-align: left; padding: 0 10px; }
+  .comandos { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .comandos button { height: 30px; text-align: left; padding: 0 8px; font-size: 10px; letter-spacing: 0.08em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
   .estado {
     position: fixed; left: 0; right: 0; top: calc(42% + 28vmin + 10px); text-align: center;
@@ -245,6 +245,7 @@
     <div class="linha"><span>Ouvido</span><span><i class="ponto" id="st-ouvido"></i></span></div>
     <div class="linha"><span>Voz</span><span><i class="ponto" id="st-voz"></i></span></div>
     <div class="linha"><span>Palmas</span><span><i class="ponto" id="st-palmas"></i></span></div>
+    <div class="linha"><span>Lembretes</span><span id="st-lembretes" style="font-family: var(--mono); font-size: 12px">0</span></div>
     <div class="linha"><span>Memória</span><span id="st-memoria" style="font-family: var(--mono); font-size: 12px">0</span></div>
   </section>
 
@@ -2142,6 +2143,7 @@ const PERSONA = [
   "Exemplo: o usuário diz 'me mostra um átomo em 3D' e você responde 'Projetando um átomo, senhor. [HOLOGRAMA: atomo]'. Nunca diga que fez algo dessas coisas sem colocar a marcação.",
   "Mesmo sem o usuário pedir, quando o assunto da conversa combinar com uma das formas (espaço e planetas, química e átomos, genética e DNA, coração, pedras preciosas, Egito e pirâmides), coloque a marcação do holograma no fim da resposta para ilustrar.",
   "Se o usuário pedir para você desligar, dormir ou ficar em espera, despeça-se em uma frase e termine com [DESLIGAR].",
+  "O painel também resolve sozinho, sem você: lembretes e alarmes, cronômetro, contas, previsão do tempo, cotação de moedas, resumos da Wikipedia e tocar música no YouTube. Se o usuário perguntar algo disso e chegar até você, explique como pedir (ex.: 'me lembra em 10 minutos de…', 'como está o tempo em Curitiba', 'quanto está o dólar').",
   "Você não lê mensagens nem o feed do Instagram.",
   "Você não tem acesso à internet: se perguntarem notícias, clima ou preços de hoje, diga que não consegue ver isso daqui.",
   "Nunca invente fatos. Se não souber, diga que não sabe.",
@@ -2429,7 +2431,14 @@ function aquecer() {
 
 async function perguntar(texto, porVoz) {
   // Pedidos simples (tarefas, hora, memória) são resolvidos aqui, sem a IA.
-  const local = comandoLocal(texto);
+  let local = comandoLocal(texto);
+  if (local && typeof local.then === "function") {
+    // tempo, cotação, Wikipedia: busca na internet antes de responder
+    legenda(texto, "");
+    mudarEstado("thinking");
+    try { local = await local; } catch (e) { local = ""; }
+    if (local && !holo) holoDoAssunto(texto, local);
+  }
   if (local) {
     legenda(texto, local);
     abortador = new AbortController();
@@ -3394,6 +3403,9 @@ function comandoLocal(texto) {
       return `Abrindo ${site[2]}, senhor.`;
     }
   }
+
+  const extra = comandoExtra(t, n);
+  if (extra) return extra;
 
   m = t.match(/^(?:adicion|anot|cri|coloc|bot|inclu)\w*\s+(?:uma\s+|a\s+)?(?:nova\s+)?(?:tarefa|pend[eê]ncia)\s*(?::|de|para)?\s*(.+)$/i);
   if (m) {
@@ -4479,11 +4491,25 @@ function desenharHolograma(t, cx, cy, R, dpr) {
 const SITES = [
   [/^(?:o\s+)?(?:meu\s+)?(?:direct|dm|mensagens?|chat)\s+(?:do\s+)?insta(?:gram)?$|^(?:as\s+)?(?:minhas\s+)?mensagens\s+do\s+insta(?:gram)?$/, "https://www.instagram.com/direct/inbox/", "as mensagens do Instagram"],
   [/insta(?:gram)?/, "https://www.instagram.com/", "o Instagram"],
-  [/youtube/, "https://www.youtube.com/", "o YouTube"],
+  [/youtube\s*music|musica\s+do\s+youtube/, "https://music.youtube.com/", "o YouTube Music"],
+  [/you\s?tube|iu\s?tubi?|yu\s?tubi?/, "https://www.youtube.com/", "o YouTube"],
   [/whats(?:app|zap)?|zap/, "https://web.whatsapp.com/", "o WhatsApp"],
   [/gmail|e-?mail/, "https://mail.google.com/", "o Gmail"],
-  [/spotify|musica/, "https://open.spotify.com/", "o Spotify"],
-  [/tiktok/, "https://www.tiktok.com/", "o TikTok"],
+  [/spotify|spot\s?fai|musica/, "https://open.spotify.com/", "o Spotify"],
+  [/tik\s?tok|tic\s?toc|tique\s?toque/, "https://www.tiktok.com/", "o TikTok"],
+  [/noticias|jornal|g1/, "https://news.google.com/home?hl=pt-BR&gl=BR&ceid=BR:pt-419", "as notícias"],
+  [/mercado\s*livre/, "https://www.mercadolivre.com.br/", "o Mercado Livre"],
+  [/shopee/, "https://shopee.com.br/", "a Shopee"],
+  [/amazon/, "https://www.amazon.com.br/", "a Amazon"],
+  [/twitch/, "https://www.twitch.tv/", "a Twitch"],
+  [/discord/, "https://discord.com/app", "o Discord"],
+  [/drive/, "https://drive.google.com/", "o Google Drive"],
+  [/outlook|hotmail/, "https://outlook.live.com/", "o Outlook"],
+  [/linkedin/, "https://www.linkedin.com/", "o LinkedIn"],
+  [/pinterest/, "https://br.pinterest.com/", "o Pinterest"],
+  [/wikipedia|wiki/, "https://pt.wikipedia.org/", "a Wikipédia"],
+  [/tradutor|traducao/, "https://translate.google.com/?sl=auto&tl=pt", "o tradutor"],
+  [/chat\s?gpt|claude/, "https://claude.ai/", "o Claude"],
   [/facebook|face/, "https://www.facebook.com/", "o Facebook"],
   [/twitter|^x$/, "https://x.com/", "o X"],
   [/netflix/, "https://www.netflix.com/", "a Netflix"],
@@ -4516,6 +4542,327 @@ function abrirSite(url, nome) {
       el.appendChild(aviso);
     }
   }, 50);
+}
+
+// ---------- funções extras: lembretes, cálculo, tempo, moedas, Wikipedia ----------
+
+const NUMEROS_FALADOS = { um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, nove: 9, dez: 10, onze: 11, doze: 12, quinze: 15, vinte: 20, trinta: 30, quarenta: 40, cinquenta: 50, sessenta: 60, meia: 0.5, meio: 0.5 };
+function numeroFalado(txt) {
+  const t = String(txt).replace(",", ".").trim();
+  if (/^\d+(\.\d+)?$/.test(t)) return Number(t);
+  return NUMEROS_FALADOS[t] ?? NaN;
+}
+
+// --- bipe (lembretes e alarmes) ---
+function bipe(vezes = 3) {
+  try {
+    criarAudio();
+    const agora = audioCtx.currentTime;
+    for (let i = 0; i < vezes; i++) {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.0001, agora + i * 0.35);
+      g.gain.exponentialRampToValueAtTime(0.3, agora + i * 0.35 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, agora + i * 0.35 + 0.25);
+      o.connect(g).connect(audioCtx.destination);
+      o.start(agora + i * 0.35);
+      o.stop(agora + i * 0.35 + 0.3);
+    }
+  } catch (e) { /* sem som */ }
+}
+
+// --- lembretes, timers e alarmes (guardados no navegador; tocam com a página aberta) ---
+const CHAVE_LEMBRETES = "jarvis.lembretes";
+let lembretes = lerJson(CHAVE_LEMBRETES).filter((l) => l && l.quando > Date.now() - 60000);
+const relogiosLembrete = new Map();
+function salvarLembretes() {
+  gravar(CHAVE_LEMBRETES, JSON.stringify(lembretes));
+  const el = $("st-lembretes");
+  if (el) el.textContent = lembretes.length;
+}
+function agendar(l) {
+  clearTimeout(relogiosLembrete.get(l.id));
+  const espera = Math.max(0, l.quando - Date.now());
+  // setTimeout não aguenta esperas muito longas: confere de novo a cada 6 horas
+  relogiosLembrete.set(l.id, setTimeout(() => (l.quando - Date.now() > 1000 ? agendar(l) : dispararLembrete(l)), Math.min(espera, 6 * 3600 * 1000)));
+}
+function criarLembrete(quando, texto) {
+  const l = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), quando, texto };
+  lembretes.push(l);
+  salvarLembretes();
+  agendar(l);
+  return l;
+}
+function dispararLembrete(l) {
+  lembretes = lembretes.filter((x) => x.id !== l.id);
+  salvarLembretes();
+  const aviso = l.texto ? `Senhor, lembrete: ${l.texto}.` : "Senhor, o tempo acabou.";
+  const anunciar = () => {
+    // espera ele terminar de falar ou pensar antes de avisar
+    if (estado === "thinking" || estado === "speaking") return setTimeout(anunciar, 1000);
+    if (dormindo) { dormindo = false; document.body.classList.remove("dormindo"); }
+    pararDeOuvir(false);
+    mudarEstado("idle");
+    contato();
+    bipe(3);
+    mostrarHolograma("relogio");
+    legenda("", aviso);
+    abortador = new AbortController();
+    const sinal = abortador.signal;
+    setTimeout(() => falar(aviso, sinal).then(() => { if (!sinal.aborted && estado === "idle" && continuo && !dormindo) ouvir(); }), 1100);
+  };
+  anunciar();
+}
+function falarDuracao(ms) {
+  const s = Math.round(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), seg = s % 60;
+  const partes = [];
+  if (h) partes.push(h + (h === 1 ? " hora" : " horas"));
+  if (m) partes.push(m + (m === 1 ? " minuto" : " minutos"));
+  if (seg && !h) partes.push(seg + (seg === 1 ? " segundo" : " segundos"));
+  return partes.join(" e ") || "menos de um segundo";
+}
+lembretes.forEach(agendar);
+salvarLembretes();
+
+// --- calculadora (sem eval: um analisador pequeno) ---
+function calcular(expr) {
+  let i = 0;
+  const s = expr.replace(/\s+/g, "");
+  const num = () => {
+    const m = s.slice(i).match(/^\d+(\.\d+)?/);
+    if (!m) throw new Error("número");
+    i += m[0].length;
+    return Number(m[0]);
+  };
+  const primario = () => {
+    if (s[i] === "(") { i++; const v = soma(); if (s[i] !== ")") throw new Error(")"); i++; return v; }
+    if (s.startsWith("r", i)) { i++; return Math.sqrt(primario()); }
+    if (s[i] === "-") { i++; return -primario(); }
+    return num();
+  };
+  const potencia = () => { const b = primario(); if (s[i] === "^") { i++; return Math.pow(b, potencia()); } return b; };
+  const produto = () => { let v = potencia(); while (s[i] === "*" || s[i] === "/") { const op = s[i++]; const d = potencia(); v = op === "*" ? v * d : v / d; } return v; };
+  const soma = () => { let v = produto(); while (s[i] === "+" || s[i] === "-") { const op = s[i++]; const d = produto(); v = op === "+" ? v + d : v - d; } return v; };
+  const v = soma();
+  if (i !== s.length || !Number.isFinite(v)) throw new Error("conta");
+  return v;
+}
+function contaFalada(n) {
+  let t = " " + n + " ";
+  t = t.replace(/(\d),(\d)/g, "$1.$2");
+  for (const [p, v] of Object.entries(NUMEROS_FALADOS)) if (v >= 1) t = t.replace(new RegExp("\\s" + p + "\\s", "g"), " " + v + " ");
+  t = t
+    .replace(/(\d+(?:\.\d+)?)\s*(?:%|por cento)\s*de\s*(\d+(?:\.\d+)?)/g, "($1/100*$2)")
+    .replace(/raiz\s+(?:quadrada\s+)?de/g, " r ")
+    .replace(/elevado\s+(?:a|ao)|elevado|\bna\b|\^/g, " ^ ")
+    .replace(/\bao quadrado\b/g, " ^ 2 ")
+    .replace(/\bao cubo\b/g, " ^ 3 ")
+    .replace(/multiplicado\s+por|vezes|\bx\b|\*/g, " * ")
+    .replace(/dividido\s+por|\bsobre\b|\//g, " / ")
+    .replace(/\bmais\b|\+/g, " + ")
+    .replace(/\bmenos\b/g, " - ");
+  if (!/^[\d\s.+\-*/^()r]+$/.test(t) || !/\d/.test(t) || !/[+\-*/^r(]/.test(t.trim().replace(/^-/, ""))) return null;
+  try { return calcular(t); } catch (e) { return null; }
+}
+function numeroBonito(v) {
+  return v.toLocaleString("pt-BR", { maximumFractionDigits: 4 });
+}
+
+// --- previsão do tempo (Open-Meteo: grátis, sem chave) ---
+const TEMPO_CODIGOS = [[0, "céu limpo"], [1, "quase sem nuvens"], [2, "parcialmente nublado"], [3, "nublado"], [48, "com neblina"], [57, "com garoa"], [67, "chuvoso"], [77, "com neve"], [82, "com pancadas de chuva"], [99, "com tempestade"]];
+function descreverTempo(c) {
+  const achou = TEMPO_CODIGOS.find(([max]) => c <= max);
+  return achou ? achou[1] : "instável";
+}
+async function previsaoDoTempo(cidade, amanha) {
+  const g = await (await fetch("https://geocoding-api.open-meteo.com/v1/search?count=1&language=pt&name=" + encodeURIComponent(cidade))).json();
+  const lugar = g.results && g.results[0];
+  if (!lugar) return `Não encontrei a cidade ${cidade}, senhor.`;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lugar.latitude}&longitude=${lugar.longitude}&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=2`;
+  const p = await (await fetch(url)).json();
+  const d = p.daily, k = amanha ? 1 : 0;
+  const chuva = d.precipitation_probability_max ? d.precipitation_probability_max[k] : null;
+  const dia = `${amanha ? "Amanhã" : "Hoje"} em ${lugar.name}: ${descreverTempo(d.weather_code[k])}, mínima de ${Math.round(d.temperature_2m_min[k])} e máxima de ${Math.round(d.temperature_2m_max[k])} graus` + (chuva != null ? `, com ${chuva}% de chance de chuva.` : ".");
+  if (amanha) return dia;
+  return `Agora faz ${Math.round(p.current.temperature_2m)} graus em ${lugar.name}, ${descreverTempo(p.current.weather_code)}. ` + dia.replace(/^Hoje em [^:]+: /, "Hoje: ");
+}
+
+// --- cotação de moedas (Frankfurter: grátis, sem chave) ---
+const MOEDAS = [[/dolar|dolares/, "USD", "dólar", "dólares"], [/euros?/, "EUR", "euro", "euros"], [/libras?/, "GBP", "libra", "libras"], [/ienes?/, "JPY", "iene", "ienes"], [/francos?/, "CHF", "franco suíço", "francos suíços"], [/yuan|iuane?s?/, "CNY", "yuan", "yuans"]];
+async function cotacao(qtd, moeda) {
+  const r = await fetch(`https://api.frankfurter.app/latest?amount=${qtd}&from=${moeda[1]}&to=BRL`);
+  if (!r.ok) throw new Error(String(r.status));
+  const j = await r.json();
+  const reais = j.rates && j.rates.BRL;
+  if (!reais) throw new Error("sem cotação");
+  const valor = reais.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return qtd === 1 ? `Um ${moeda[2]} está valendo ${valor}, senhor.` : `${numeroBonito(qtd)} ${moeda[3]} dão ${valor}.`;
+}
+
+// --- Wikipedia: resumo curto de "quem foi" e "o que é" ---
+async function resumoWikipedia(tema) {
+  const r = await fetch("https://pt.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(tema.replace(/\s+/g, "_")) + "?redirect=true");
+  if (!r.ok) return "";
+  const j = await r.json();
+  if (!j.extract || j.type === "disambiguation") return "";
+  const frases = j.extract.match(/[^.!?]+[.!?]+/g) || [j.extract];
+  return frases.slice(0, 2).map((f) => f.trim()).join(" ") + " Fonte: Wikipédia.";
+}
+
+// O texto sem acentos tem as mesmas posições do original: devolve o trecho com acentos.
+function doOriginal(t, n, trecho) {
+  const i = n.lastIndexOf(trecho);
+  return i >= 0 && t.length === n.length ? t.slice(i, i + trecho.length) : trecho;
+}
+
+// --- cronômetro ---
+let cronometro = null;
+
+// --- ajuda ---
+const FUNCOES = [
+  "› Conversar (IA no seu PC)", "› Pendências: adiciona / conclui / quais são",
+  "› Memória: lembra que… / o que você lembra", "› Lembretes: me lembra em 10 minutos de…",
+  "› Alarme: alarme às 7 e meia", "› Cronômetro: inicia / para o cronômetro",
+  "› Calculadora: quanto é 15 vezes 32", "› Tempo: como está o tempo em Curitiba",
+  "› Moedas: quanto está o dólar", "› Wikipedia: quem foi… / o que é…",
+  "› Sites: abre o YouTube, TikTok, Instagram…", "› Música: toca (artista)",
+  "› Hologramas: 64 formas, desfile de hologramas", "› Fica mudo / volta a falar",
+  "› Desligar / duas palmas para ligar",
+];
+
+// Comandos extras: devolve texto, uma Promise de texto (internet) ou "".
+function comandoExtra(t, n) {
+  let m;
+
+  if (/^(?:o que (?:voce|vc) (?:sabe|consegue) fazer|ajuda|quais (?:sao )?(?:as )?(?:suas )?(?:funcoes|comandos)|me ajuda com os comandos)/.test(n)) {
+    mostrarHologramaDeTexto("FUNÇÕES", FUNCOES);
+    return "Projetei tudo o que sei fazer, senhor. É só pedir.";
+  }
+
+  // mudo por voz
+  if (/^(?:fica|fique|ficar)\s+(?:mudo|quieto|em silencio)|^silencio$|^modo silencioso/.test(n)) {
+    mudo = true;
+    gravar("jarvis.mudo", "1");
+    atualizarBotoes();
+    return "Modo silencioso. Vou responder só por escrito.";
+  }
+  if (/^(?:volta|volte|pode)\s+a?\s*falar|^desmut|^tira\w*\s+(?:do\s+)?mudo/.test(n)) {
+    mudo = false;
+    gravar("jarvis.mudo", "0");
+    atualizarBotoes();
+    return "Voltei a falar, senhor.";
+  }
+
+  // cronômetro
+  if (/(?:inici|comec|liga|dispar)\w*\s+(?:o\s+)?cronometro|^cronometro$/.test(n)) {
+    cronometro = Date.now();
+    mostrarHolograma("relogio");
+    return "Cronômetro iniciado.";
+  }
+  if (/(?:par[ae]|pause|desliga|encerr)\w*\s+(?:o\s+)?cronometro|quanto tempo (?:passou|deu)|tempo do cronometro/.test(n)) {
+    if (!cronometro) return "O cronômetro não está ligado, senhor.";
+    const ms = Date.now() - cronometro;
+    if (!/quanto tempo|tempo do/.test(n)) cronometro = null;
+    return "Marcou " + falarDuracao(ms) + ".";
+  }
+
+  // lembretes e timers: "me lembra em 10 minutos de…", "timer de 5 minutos"
+  m = n.match(/(?:lembr|avis|alarme|timer|temporizador|despert|cronometr)\w*.*?(?:em|daqui\s+a|daqui|de|por|para)\s+(\d+(?:[.,]\d+)?|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|quinze|vinte|trinta|quarenta|cinquenta|meia)\s*(segundos?|seg|minutos?|min|horas?|h)\b(?:\s+(?:de|para|pra|que|pro)\s+(.+))?/);
+  if (m) {
+    const qtd = numeroFalado(m[1]);
+    const unidade = m[2].startsWith("h") ? 3600000 : m[2].startsWith("min") ? 60000 : 1000;
+    if (Number.isFinite(qtd) && qtd > 0) {
+      const ms = qtd * unidade;
+      const antes = n.match(/lembr\w*\s+(?:de|que)\s+(.+?)\s+(?:em|daqui)\s/);
+      const oQue = m[3] ? doOriginal(t, n, m[3]) : antes ? doOriginal(t, n, antes[1]) : "";
+      criarLembrete(Date.now() + ms, oQue);
+      return `Combinado. Em ${falarDuracao(ms)} eu aviso${oQue ? ": " + oQue : ""}.`;
+    }
+  }
+  // alarme num horário: "alarme às 7 e meia", "me lembra às 15h de ligar"
+  m = n.match(/(?:alarme|despert|lembr|avis|acord)\w*.*?\bas\s+(\d{1,2})(?:\s*(?::|h|horas?)\s*(\d{1,2})?|\s+e\s+(meia|\d{1,2}))?(?:\s+(?:da|de)\s+(manha|tarde|noite))?(?:\s+(?:de|para|pra|que)\s+(.+))?/);
+  if (m) {
+    let h = Number(m[1]);
+    const min = m[3] === "meia" ? 30 : Number(m[2] || m[3] || 0);
+    if ((m[4] === "tarde" || m[4] === "noite") && h < 12) h += 12;
+    if (h < 24 && min < 60) {
+      const alvo = new Date();
+      alvo.setHours(h, min, 0, 0);
+      if (alvo.getTime() <= Date.now()) alvo.setDate(alvo.getDate() + 1);
+      const oQue = m[5] ? doOriginal(t, n, m[5]) : "";
+      criarLembrete(alvo.getTime(), oQue || (/acord|despert/.test(n) ? "hora de acordar" : ""));
+      const quando = alvo.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      return `Alarme marcado para ${alvo.getDate() === new Date().getDate() ? "hoje" : "amanhã"} às ${quando}, senhor.`;
+    }
+  }
+  if (/(?:quais|meus|minhas|lista\w*)\s+(?:sao\s+)?(?:os\s+|as\s+)?(?:meus\s+)?(?:lembretes|alarmes|timers)/.test(n)) {
+    if (!lembretes.length) return "Nenhum lembrete marcado, senhor.";
+    const itens = lembretes.slice().sort((a, b) => a.quando - b.quando).map((l) => new Date(l.quando).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) + (l.texto ? " " + l.texto : ""));
+    mostrarHologramaDeTexto("LEMBRETES", itens.map((x) => "› " + x));
+    return `Você tem ${itens.length === 1 ? "um lembrete" : itens.length + " lembretes"}: ` + itens.join("; ") + ".";
+  }
+  if (/(?:cancel|apag|remov|tir|desliga)\w*\s+(?:os\s+|as\s+|o\s+|a\s+|todos\s+os\s+)?(?:meus\s+)?(?:lembretes?|alarmes?|timers?)/.test(n)) {
+    lembretes.forEach((l) => clearTimeout(relogiosLembrete.get(l.id)));
+    const qtd = lembretes.length;
+    lembretes = [];
+    salvarLembretes();
+    return qtd ? "Cancelei os lembretes, senhor." : "Não havia lembretes, senhor.";
+  }
+
+  // calculadora
+  m = n.match(/^(?:quanto\s+(?:e|da|dá|sao)|calcul\w*|qual\s+(?:e\s+)?o\s+resultado\s+de|resolve)\s+(.+)$/) || n.match(/^((?:raiz|\d).*)$/);
+  if (m) {
+    const v = contaFalada(m[1].replace(/[?=]/g, ""));
+    if (v !== null) return "Dá " + numeroBonito(v) + ".";
+  }
+
+  // sua cidade (para o tempo)
+  m = t.match(/^(?:minha\s+cidade\s+(?:e|é)|eu\s+moro\s+em|moro\s+em)\s+(.+)$/i);
+  if (m) {
+    gravar("jarvis.cidade", m[1].trim());
+    return `Anotado, senhor: o senhor mora em ${m[1].trim()}.`;
+  }
+
+  // previsão do tempo
+  if (/previsao|como\s+(?:esta|ta|vai\s+estar|fica)\s+o\s+(?:tempo|clima)|\bo\s+clima\b|temperatura|vai\s+chover|\bchuva\b|esta\s+(?:frio|calor)|faz\s+(?:frio|calor)|quantos\s+graus/.test(n) && !/abr\w*\s/.test(n)) {
+    const mc = t.match(/\b(?:em|de|para|no|na)\s+([A-ZÀ-Ú][\wÀ-ú'-]*(?:\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ú][\wÀ-ú'-]*)*)\s*\??$/) || t.match(/\b(?:em|para|na|no)\s+([a-zà-ú][\wà-ú'-]+(?:\s+[a-zà-ú][\wà-ú'-]+){0,2})\s*\??$/i);
+    const cidadeFalada = mc && !/^(?:hoje|amanha|amanhã|agora|semana|minha cidade|aqui)$/i.test(mc[1]) ? mc[1] : "";
+    const cidade = cidadeFalada || ler("jarvis.cidade", "");
+    if (!cidade) return 'De qual cidade, senhor? Diga, por exemplo, "minha cidade é Curitiba" e eu guardo.';
+    mostrarHolograma("sol");
+    return previsaoDoTempo(cidade, /amanha/.test(n)).catch(() => "Não consegui ver a previsão agora, senhor. Confira a internet.");
+  }
+
+  // cotação: "quanto está o dólar", "100 euros em reais"
+  if (/dolar|euro|libra|iene|franco suico|yuan|cotacao/.test(n) && /quanto|cotacao|valor|em reais|preco|converte/.test(n)) {
+    const moeda = MOEDAS.find(([re]) => re.test(n)) || MOEDAS[0];
+    const mq = n.match(/(\d+(?:[.,]\d+)?)\s*(?:mil\s+)?(?:dolar|euro|libra|iene|franco|yuan)/);
+    const qtd = mq ? numeroFalado(mq[1]) * (/\d\s*mil\s/.test(n) ? 1000 : 1) : 1;
+    mostrarHolograma("grafico");
+    return cotacao(qtd, moeda).catch(() => {
+      abrirSite("https://www.google.com/search?q=" + encodeURIComponent(`${qtd} ${moeda[3]} em reais`), "o Google");
+      return "Não consegui a cotação direto, senhor. Abri a pesquisa no Google.";
+    });
+  }
+
+  // música: "toca Coldplay", "quero ouvir samba"
+  m = t.match(/^(?:jarvis[,\s]+)?(?:toca|toque|tocar|bota|coloca|coloque|põe|poe)\s+(?:a\s+|o\s+|uma\s+|um\s+)?(?:m[uú]sica\s+(?:d[aeo]s?\s+)?)?(.+?)(?:\s+(?:pra|para)\s+(?:eu\s+)?(?:ouvir|tocar))?$/i) || t.match(/^(?:quero|queria)\s+ouvir\s+(.+)$/i);
+  if (m && !/tarefa|holograma/i.test(m[1])) {
+    abrirSite("https://www.youtube.com/results?search_query=" + encodeURIComponent(m[1]), "o YouTube");
+    mostrarHolograma("ondasonora");
+    return `Procurando ${m[1]} no YouTube, senhor.`;
+  }
+
+  // Wikipedia: "quem foi Santos Dumont", "o que é fotossíntese"
+  m = t.match(/^(?:jarvis[,\s]+)?(?:quem\s+(?:foi|é|e|era)|o\s+que\s+(?:é|e|foi|significa)|o\s+que\s+(?:quer\s+dizer|são|sao))\s+(?:o\s+|a\s+|os\s+|as\s+|um\s+|uma\s+)?(.+?)\??$/i);
+  if (m) {
+    const tema = m[1].trim();
+    const palavras = tema.split(/\s+/).length;
+    if (palavras <= 5 && !/^(?:isso|isto|aquilo|voc[eê]|vc|tu|eu|ele|ela|seu|sua|meu|minha)\b/i.test(tema)) {
+      return resumoWikipedia(tema).catch(() => "");
+    }
+  }
+  return "";
 }
 
 // ---------- calendário ----------
@@ -4558,6 +4905,10 @@ const COMANDOS = [
   ["CURIOSIDADE", "Me conta uma curiosidade interessante em duas frases."],
   ["HOLOGRAMA", "Jarvis, mostra um holograma surpresa"],
   ["INSTAGRAM", "Abre meu Instagram"],
+  ["YOUTUBE", "Abre o YouTube"],
+  ["TIKTOK", "Abre o TikTok"],
+  ["TEMPO", "Como está o tempo?"],
+  ["FUNÇÕES", "O que você sabe fazer?"],
 ];
 for (const [rotulo, pedido] of COMANDOS) {
   const b = document.createElement("button");

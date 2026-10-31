@@ -20,3 +20,13 @@ rodando no seu computador.
 
 Pendências, memória, hora e data funcionam mesmo sem o Ollama. Tudo fica
 salvo só no seu navegador.
+
+## O que ele faz
+
+- Mãos livres: ouve até você fazer uma pausa; em espera (vermelho) depois de
+  1 minuto ou quando você diz "desligar"; duas palmas ligam de novo.
+- 64 hologramas 3D que aparecem sozinhos conforme o assunto (arraste para girar).
+- Lembretes, alarmes e cronômetro; calculadora; previsão do tempo
+  (Open-Meteo); cotação de moedas (Frankfurter); resumos da Wikipédia.
+- Abre sites por voz (YouTube, TikTok, Instagram, WhatsApp…) e toca música no YouTube.
+- Diga "o que você sabe fazer" para ver tudo.
