@@ -2137,10 +2137,11 @@ const PERSONA = [
   "Respostas curtas por padrão, de uma a três frases; dê detalhes só quando o usuário pedir.",
   "Suas respostas são faladas em voz alta: escreva como quem conversa, em frases curtas e naturais. Nada de listas, tópicos, títulos, negrito, tabelas ou markdown.",
   "Nunca use emojis nem emoticons.",
-  "Você controla o painel com marcações que o usuário não vê. Quando ele pedir um holograma, uma projeção ou para mostrar algo em 3D, termine a resposta com [HOLOGRAMA: forma], usando uma destas formas: planeta, terra, esfera, cubo, piramide, dna, atomo, toro, coracao, diamante, foguete, galaxia, pendencias, memoria. Se ele pedir uma forma que não está na lista, diga que ainda não sabe projetar isso e cite as opções, sem marcação.",
+  "Você controla o painel com marcações que o usuário não vê. Quando ele pedir um holograma, uma projeção ou para mostrar algo em 3D, termine a resposta com [HOLOGRAMA: forma], usando um destes nomes: planeta, terra, lua, sol, estrela, cometa, galaxia, buraco negro, satelite, foguete, disco voador, atomo, molecula de agua, benzeno, rede cristalina, dna, celula, cerebro, olho, coracao, esfera, cubo, piramide, tetraedro, octaedro, icosaedro, dodecaedro, cilindro, cone, toro, no toroidal, fita de mobius, espiral, mola, hiperboloide, tesserato, onda, onda sonora, diamante, carro, aviao, barco, bicicleta, drone, robo, casa, cidade, arvore, montanhas, relogio, ampulheta, engrenagem, lampada, trofeu, coroa, dado, bola de futebol, xicara de cafe, livro, notebook, celular, escudo, espada, grafico, pendencias, memoria. Se ele pedir uma forma que não está na lista, diga que ainda não sabe projetar isso e cite as opções, sem marcação.",
   "Quando ele pedir para abrir um site ou aplicativo, termine com [ABRIR: nome], com um destes nomes: instagram, mensagens do instagram, youtube, whatsapp, gmail, spotify, tiktok, facebook, x, netflix, github, google, agenda, maps. Para pesquisar algo na internet, termine com [PESQUISAR: termo]; no YouTube, com [YOUTUBE: termo].",
   "Exemplo: o usuário diz 'me mostra um átomo em 3D' e você responde 'Projetando um átomo, senhor. [HOLOGRAMA: atomo]'. Nunca diga que fez algo dessas coisas sem colocar a marcação.",
   "Mesmo sem o usuário pedir, quando o assunto da conversa combinar com uma das formas (espaço e planetas, química e átomos, genética e DNA, coração, pedras preciosas, Egito e pirâmides), coloque a marcação do holograma no fim da resposta para ilustrar.",
+  "Se o usuário pedir para você desligar, dormir ou ficar em espera, despeça-se em uma frase e termine com [DESLIGAR].",
   "Você não lê mensagens nem o feed do Instagram.",
   "Você não tem acesso à internet: se perguntarem notícias, clima ou preços de hoje, diga que não consegue ver isso daqui.",
   "Nunca invente fatos. Se não souber, diga que não sabe.",
@@ -2191,6 +2192,7 @@ const parametros = new URLSearchParams(location.search);
 const TEMPO_DORMIR = (Number(parametros.get("dormir")) || 60) * 1000;
 const SILENCIO_FIM = 1500;
 let dormindo = true;
+let dormirDepois = false; // pedido de "desligar": dorme assim que terminar de falar
 let ultimoContato = Date.now();
 function contato() { ultimoContato = Date.now(); }
 
@@ -2340,9 +2342,9 @@ function semPensamento(texto) {
 
 // As marcações [HOLOGRAMA: …] [ABRIR: …] [PESQUISAR: …] [YOUTUBE: …] são ordens
 // para o painel: somem do texto mostrado e falado (inclusive pela metade, durante a resposta).
-const RE_MARCACAO = /\[\s*(HOLOGRAMA|ABRIR|PESQUISAR|YOUTUBE)\s*:\s*([^\]]*)\]/gi;
+const RE_MARCACAO = /\[\s*(HOLOGRAMA|ABRIR|PESQUISAR|YOUTUBE|DESLIGAR)\s*:?\s*([^\]]*)\]/gi;
 function semMarcacoes(texto) {
-  return texto.replace(RE_MARCACAO, "").replace(/\[\s*(H|HO|HOL|HOLO|A|AB|ABR|ABRI|ABRIR|P|PE|PES|PESQ|Y|YO|YOU)[^\]]*$/i, "").replace(/[ \t]+$/gm, "");
+  return texto.replace(RE_MARCACAO, "").replace(/\[\s*(H|HO|HOL|HOLO|A|AB|ABR|ABRI|ABRIR|P|PE|PES|PESQ|Y|YO|YOU|D|DE|DES|DESL)[^\]]*$/i, "").replace(/[ \t]+$/gm, "");
 }
 
 function executarMarcacoes(bruto) {
@@ -2364,6 +2366,8 @@ function executarMarcacoes(bruto) {
       if (site) abrirSite(site[1], site[2]);
     } else if (t2 === "PESQUISAR" && valor) {
       abrirSite("https://www.google.com/search?q=" + encodeURIComponent(valor), "o Google");
+    } else if (t2 === "DESLIGAR") {
+      dormirDepois = true;
     } else if (t2 === "YOUTUBE" && valor) {
       abrirSite("https://www.youtube.com/results?search_query=" + encodeURIComponent(valor), "o YouTube");
     }
@@ -2431,6 +2435,7 @@ async function perguntar(texto, porVoz) {
     abortador = new AbortController();
     const sinalLocal = abortador.signal;
     await falar(local, sinalLocal);
+    if (dormirDepois) { dormirDepois = false; dormir(); return; }
     if (!sinalLocal.aborted && estado === "idle" && continuo && !dormindo) ouvir();
     return;
   }
@@ -2490,6 +2495,7 @@ async function perguntar(texto, porVoz) {
   historico.push({ role: "assistant", content: resposta });
   legenda(texto, resposta || "(sem resposta)");
   await falar(resposta, sinal);
+  if (dormirDepois) { dormirDepois = false; dormir(); return; }
   if (!sinal.aborted && estado === "idle" && continuo && !dormindo) ouvir();
 }
 
@@ -3313,6 +3319,23 @@ function comandoLocal(texto) {
   const n = semAcento(t);
   let m;
 
+  // desligar: vai para a espera (vermelho) depois de se despedir
+  if (/^(?:pode\s+)?(?:se\s+)?(?:deslig\w*|dorm\w*|descans\w*)(?:\s+(?:agora|jarvis|o sistema|tudo|por (?:hoje|agora)))?$|modo\s+(?:de\s+)?espera|^(?:tchau|ate\s+(?:logo|mais|amanha)|boa\s+noite)(?:\s+jarvis)?$|^vai\s+dormir/.test(n)) {
+    dormirDepois = true;
+    return "Até logo, senhor. Bata duas palmas quando precisar de mim.";
+  }
+
+  // lista e desfile de hologramas
+  if (/(quais|que)\s+(?:sao\s+)?(?:os\s+)?(?:h?olo\s?gramas|projecoes)|lista\w*\s+(?:os\s+)?h?olo\s?gramas/.test(n)) {
+    const nomes = Object.keys(FORMAS).map((k) => FORMAS[k].nome.toLowerCase());
+    mostrarHologramaDeTexto("HOLOGRAMAS", nomes.reduce((acc, nome, i) => { if (i % 3 === 0) acc.push(""); acc[acc.length - 1] += (i % 3 ? " · " : "") + nome; return acc; }, []));
+    return `Sei projetar ${nomes.length} hologramas, senhor. Estão no painel. Diga "desfile de hologramas" para ver todos passando.`;
+  }
+  if (/desfile|todos\s+os\s+h?olo\s?gramas|vitrine/.test(n)) {
+    iniciarDesfile();
+    return "Iniciando o desfile de hologramas, senhor. Diga \"fecha o holograma\" para parar.";
+  }
+
   // hologramas
   // O reconhecimento de voz às vezes escreve "olograma", "holo grama" ou "holográfico".
   const HOLO = /h?olo\s?gra(?:ma|fi)|\bprojet(?:a|e|ar|ando)\b|em\s+3\s?d|tridimension/;
@@ -3337,7 +3360,7 @@ function comandoLocal(texto) {
       mostrarHolograma(chave);
       return `Projetando ${FALA_FORMA[chave]}, senhor.`;
     }
-    return "Ainda não sei projetar isso, senhor. Posso mostrar: planeta, terra, esfera, cubo, pirâmide, DNA, átomo, toro, coração, diamante, foguete, galáxia, suas pendências ou sua memória.";
+    return `Ainda não sei projetar isso, senhor. Tenho ${Object.keys(FORMAS).length} hologramas, por exemplo: planeta, buraco negro, DNA, cérebro, carro, avião, cidade, relógio, robô, tesserato. Peça "quais hologramas você sabe" para ver todos.`;
   }
 
   // pesquisas e sites (o texto da busca mantém os acentos)
@@ -3613,12 +3636,634 @@ const PALAVRAS_HOLO = [
   [/galaxia|estrela|universo|via lactea/, "galaxia"],
 ];
 
+// ---------- mais hologramas ----------
+
+// Peças para montar as formas: caixas, cilindros, cones, poliedros.
+const ARESTAS_CAIXA = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+function caixa(cx, cy, cz, w, h, d) {
+  const x0 = cx - w / 2, x1 = cx + w / 2, y0 = cy - h / 2, y1 = cy + h / 2, z0 = cz - d / 2, z1 = cz + d / 2;
+  const v = [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]];
+  return ARESTAS_CAIXA.map(([i, j]) => [v[i], v[j]]);
+}
+function mover(linhas, dx, dy, dz) {
+  return linhas.map((l) => l.map(([x, y, z]) => [x + dx, y + dy, z + dz]));
+}
+function escalar(linhas, k) {
+  return linhas.map((l) => l.map(([x, y, z]) => [x * k, y * k, z * k]));
+}
+function girarTudo(linhas, ax, ay, az) {
+  return linhas.map((l) => girar(l, ax, ay, az));
+}
+function cilindro(r, y0, y1, n = 24, verticais = 8, aneis = 2) {
+  const linhas = [];
+  for (let i = 0; i < aneis; i++) linhas.push(circulo(r, y0 + ((y1 - y0) * i) / (aneis - 1), n));
+  for (let i = 0; i < verticais; i++) {
+    const a = (i / verticais) * Math.PI * 2;
+    linhas.push([[Math.cos(a) * r, y0, Math.sin(a) * r], [Math.cos(a) * r, y1, Math.sin(a) * r]]);
+  }
+  return linhas;
+}
+function cone(r, y0, topo, n = 24, verticais = 8) {
+  const linhas = [circulo(r, y0, n)];
+  for (let i = 0; i < verticais; i++) {
+    const a = (i / verticais) * Math.PI * 2;
+    linhas.push([[Math.cos(a) * r, y0, Math.sin(a) * r], [0, topo, 0]]);
+  }
+  return linhas;
+}
+// Liga os vértices que estão à menor distância entre si: dá as arestas dos poliedros regulares.
+function poliedro(vertices, raio = 1) {
+  const m = Math.max(...vertices.map((v) => Math.hypot(...v)));
+  const vs = vertices.map((v) => v.map((c) => (c / m) * raio));
+  let menor = Infinity;
+  for (let i = 0; i < vs.length; i++) for (let j = i + 1; j < vs.length; j++) menor = Math.min(menor, Math.hypot(vs[i][0] - vs[j][0], vs[i][1] - vs[j][1], vs[i][2] - vs[j][2]));
+  const linhas = [];
+  for (let i = 0; i < vs.length; i++) for (let j = i + 1; j < vs.length; j++) {
+    if (Math.hypot(vs[i][0] - vs[j][0], vs[i][1] - vs[j][1], vs[i][2] - vs[j][2]) < menor * 1.05) linhas.push([vs[i], vs[j]]);
+  }
+  return linhas;
+}
+const PHI = (1 + Math.sqrt(5)) / 2;
+function combinar(base) {
+  // todas as combinações de sinais e permutações cíclicas de [a, b, c]
+  const out = [];
+  for (const [a, b, c] of base) {
+    for (const sa of a ? [1, -1] : [1]) for (const sb of b ? [1, -1] : [1]) for (const sc of c ? [1, -1] : [1]) {
+      const p = [a * sa, b * sb, c * sc];
+      out.push(p, [p[1], p[2], p[0]], [p[2], p[0], p[1]]);
+    }
+  }
+  const unicos = [];
+  for (const p of out) if (!unicos.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 1e-6)) unicos.push(p);
+  return unicos;
+}
+const V_ICOSAEDRO = combinar([[0, 1, PHI]]);
+const V_DODECAEDRO = [...combinar([[1, 1, 1]]), ...combinar([[0, 1 / PHI, PHI]])];
+function bolaDeFutebol() {
+  // icosaedro truncado: cada aresta do icosaedro cortada em terços
+  const ico = poliedro(V_ICOSAEDRO, 1);
+  const pts = [];
+  for (const [a, b] of ico) {
+    for (const k of [1 / 3, 2 / 3]) {
+      const p = [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+      if (!pts.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 1e-6)) pts.push(p);
+    }
+  }
+  return poliedro(pts, 1);
+}
+function curva(f, n = 160) {
+  const pts = [];
+  for (let i = 0; i <= n; i++) pts.push(f(i / n));
+  return pts;
+}
+function grade(f, nu = 16, nv = 16, passosU = 40, passosV = 40) {
+  const linhas = [];
+  for (let i = 0; i <= nu; i++) linhas.push(curva((v) => f(i / nu, v), passosV));
+  for (let j = 0; j <= nv; j++) linhas.push(curva((u) => f(u, j / nv), passosU));
+  return linhas;
+}
+function semente(n) {
+  let s = n;
+  return () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+}
+
+Object.assign(FORMAS, {
+  lua: {
+    nome: "LUA",
+    fazer: () => {
+      const linhas = esferaLinhas(0.9, 8, 10);
+      const r = semente(3);
+      for (let i = 0; i < 9; i++) {
+        const lat = (r() - 0.5) * 2.4, lon = r() * Math.PI * 2, tam = 0.08 + r() * 0.14;
+        linhas.push(girar(circulo(tam, 0.9 - tam * 0.3, 18), 0, 0, 0).map((p) => girar([p], Math.PI / 2 - lat, lon, 0)[0]));
+      }
+      return { linhas };
+    },
+  },
+  sol: {
+    nome: "SOL",
+    fazer: () => {
+      const linhas = esferaLinhas(0.7, 8, 10);
+      const r = semente(5);
+      for (let i = 0; i < 40; i++) {
+        const a = r() * Math.PI * 2, b = Math.acos(2 * r() - 1), l = 0.95 + r() * 0.4;
+        const d = [Math.sin(b) * Math.cos(a), Math.cos(b), Math.sin(b) * Math.sin(a)];
+        linhas.push([d.map((c) => c * 0.75), d.map((c) => c * l)]);
+      }
+      return { linhas };
+    },
+  },
+  cometa: {
+    nome: "COMETA",
+    fazer: () => {
+      const linhas = mover(esferaLinhas(0.2, 5, 6), 0.8, 0.4, 0);
+      for (let i = 0; i < 14; i++) {
+        const ang = (i / 14) * Math.PI * 2;
+        linhas.push(curva((u) => [0.8 - u * 2.2, 0.4 - u * 0.9 + Math.sin(ang) * u * 0.35, Math.cos(ang) * u * 0.35], 20));
+      }
+      return { linhas };
+    },
+  },
+  estrela: {
+    nome: "ESTRELA",
+    fazer: () => {
+      const pontas = [], linhas = [];
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 - Math.PI / 2, r = i % 2 ? 0.45 : 1.1;
+        pontas.push([Math.cos(a) * r, -Math.sin(a) * r, 0]);
+      }
+      linhas.push([...pontas, pontas[0]]);
+      for (const p of pontas) { linhas.push([p, [0, 0, 0.35]]); linhas.push([p, [0, 0, -0.35]]); }
+      return { linhas };
+    },
+  },
+  buraconegro: {
+    nome: "BURACO NEGRO",
+    fazer: () => {
+      const linhas = grade((u, v) => {
+        const r = 0.15 + u * 1.25, a = v * Math.PI * 2;
+        return [Math.cos(a) * r, -0.35 / (r + 0.05) + 0.3, Math.sin(a) * r];
+      }, 10, 20, 30, 50);
+      linhas.push(circulo(0.35, 0.5, 40), circulo(0.42, 0.5, 40));
+      return { linhas };
+    },
+  },
+  satelite: {
+    nome: "SATÉLITE",
+    fazer: () => [
+      ...caixa(0, 0, 0, 0.45, 0.45, 0.6),
+      ...caixa(-0.85, 0, 0, 1.0, 0.04, 0.45), ...caixa(0.85, 0, 0, 1.0, 0.04, 0.45),
+      [[-0.35, 0, -0.22], [-1.35, 0, -0.22]], [[-0.6, 0, -0.22], [-0.6, 0, 0.22]], [[-0.85, 0, -0.22], [-0.85, 0, 0.22]], [[-1.1, 0, -0.22], [-1.1, 0, 0.22]],
+      [[0.6, 0, -0.22], [0.6, 0, 0.22]], [[0.85, 0, -0.22], [0.85, 0, 0.22]], [[1.1, 0, -0.22], [1.1, 0, 0.22]],
+      ...mover(cone(0.3, 0, 0.25, 20, 8), 0, 0.22, 0),
+    ].reduce((acc, l) => (acc.linhas.push(l), acc), { linhas: [] }),
+  },
+  ovni: {
+    nome: "DISCO VOADOR",
+    fazer: () => {
+      const linhas = [];
+      for (let i = 0; i <= 6; i++) {
+        const u = i / 6;
+        linhas.push(circulo(1.1 * Math.sin(u * Math.PI * 0.5 + 0.3), -0.15 + u * 0.25, 48));
+      }
+      linhas.push(...mover(esferaLinhas(0.38, 5, 8), 0, 0.15, 0).filter((l) => l.every((p) => p[1] >= 0.1)));
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        linhas.push(circulo(0.05, 0, 10).map(([x, , z]) => [x + Math.cos(a) * 0.8, -0.18, z + Math.sin(a) * 0.8]));
+      }
+      return { linhas };
+    },
+  },
+  molecula: {
+    nome: "MOLÉCULA DE ÁGUA",
+    fazer: () => ({
+      linhas: [
+        ...esferaLinhas(0.45, 6, 8),
+        ...mover(esferaLinhas(0.28, 5, 6), 0.75, -0.55, 0),
+        ...mover(esferaLinhas(0.28, 5, 6), -0.75, -0.55, 0),
+        [[0.3, -0.22, 0], [0.55, -0.4, 0]], [[-0.3, -0.22, 0], [-0.55, -0.4, 0]],
+      ],
+    }),
+  },
+  benzeno: {
+    nome: "BENZENO",
+    fazer: () => {
+      const linhas = [];
+      const hex = [];
+      for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; hex.push([Math.cos(a) * 0.7, Math.sin(a) * 0.7, 0]); }
+      linhas.push([...hex, hex[0]], circulo(0.45, 0, 36, "z"));
+      for (const p of hex) {
+        linhas.push(...mover(esferaLinhas(0.1, 4, 4), ...p));
+        linhas.push([p, p.map((c) => c * 1.55)]);
+        linhas.push(...mover(esferaLinhas(0.07, 3, 4), ...p.map((c) => c * 1.6)));
+      }
+      return { linhas };
+    },
+  },
+  cristal: {
+    nome: "REDE CRISTALINA",
+    fazer: () => {
+      const linhas = [], n = 3, s = 1.6 / n;
+      for (let i = 0; i <= n; i++) for (let j = 0; j <= n; j++) {
+        const a = -0.8 + i * s, b = -0.8 + j * s;
+        linhas.push([[a, b, -0.8], [a, b, 0.8]], [[a, -0.8, b], [a, 0.8, b]], [[-0.8, a, b], [0.8, a, b]]);
+      }
+      return { linhas, pontos: linhas.flat().filter((p, k) => k % 2 === 0) };
+    },
+  },
+  celula: {
+    nome: "CÉLULA",
+    fazer: () => {
+      const linhas = esferaLinhas(1.05, 7, 10);
+      linhas.push(...mover(esferaLinhas(0.32, 5, 6), 0.15, 0.1, 0));
+      const r = semente(11);
+      for (let i = 0; i < 6; i++) linhas.push(...mover(escalar(esferaLinhas(1, 3, 4), 0.06 + r() * 0.06), (r() - 0.5) * 1.3, (r() - 0.5) * 1.3, (r() - 0.5) * 1.3));
+      return { linhas };
+    },
+  },
+  cerebro: {
+    nome: "CÉREBRO",
+    fazer: () => {
+      const linhas = [];
+      for (const lado of [-1, 1]) {
+        linhas.push(...grade((u, v) => {
+          const lat = (u - 0.5) * Math.PI, lon = v * Math.PI * 2;
+          const dobra = 1 + 0.06 * Math.sin(lat * 9) * Math.sin(lon * 7);
+          return [lado * (0.06 + 0.5 * Math.cos(lat) * Math.abs(Math.cos(lon)) * dobra), 0.6 * Math.sin(lat) * dobra, 0.85 * Math.cos(lat) * Math.sin(lon) * dobra];
+        }, 8, 10, 24, 40));
+      }
+      linhas.push(...mover(cilindro(0.12, -0.9, -0.5, 12, 4), 0, 0, -0.2));
+      return { linhas };
+    },
+  },
+  olho: {
+    nome: "OLHO",
+    fazer: () => ({
+      linhas: [
+        ...esferaLinhas(0.9, 7, 8),
+        circulo(0.45, 0.78, 36, "z").map(([x, y, z]) => [x, y, 0]).map(([x, y]) => [x, y - 0.78, 0.78]),
+        circulo(0.2, 0, 24, "z").map(([x, y]) => [x, y, 0.9]),
+        circulo(0.35, 0, 30, "z").map(([x, y]) => [x, y, 0.85]),
+      ],
+    }),
+  },
+  tetraedro: { nome: "TETRAEDRO", fazer: () => ({ linhas: poliedro([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]], 1.1) }) },
+  octaedro: { nome: "OCTAEDRO", fazer: () => ({ linhas: poliedro([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]], 1.1) }) },
+  icosaedro: { nome: "ICOSAEDRO", fazer: () => ({ linhas: poliedro(V_ICOSAEDRO, 1.05) }) },
+  dodecaedro: { nome: "DODECAEDRO", fazer: () => ({ linhas: poliedro(V_DODECAEDRO, 1.05) }) },
+  bola: { nome: "BOLA DE FUTEBOL", fazer: () => ({ linhas: bolaDeFutebol() }) },
+  cilindro: { nome: "CILINDRO", fazer: () => ({ linhas: cilindro(0.6, -0.9, 0.9, 36, 16, 5) }) },
+  cone: { nome: "CONE", fazer: () => ({ linhas: [...cone(0.8, -0.8, 1.0, 36, 16), circulo(0.4, 0.1, 30), circulo(0.6, -0.35, 30)] }) },
+  no: {
+    nome: "NÓ TOROIDAL",
+    fazer: () => ({ linhas: [curva((u) => { const t = u * Math.PI * 2, p = 2, q = 3, r = 0.55 + 0.25 * Math.cos(q * t); return [r * Math.cos(p * t), 0.25 * Math.sin(q * t), r * Math.sin(p * t)].map((c) => c * 1.3); }, 300)] }),
+  },
+  mobius: {
+    nome: "FITA DE MÖBIUS",
+    fazer: () => ({
+      linhas: grade((u, v) => {
+        const a = u * Math.PI * 2, w = (v - 0.5) * 0.6;
+        return [(0.9 + w * Math.cos(a / 2)) * Math.cos(a), w * Math.sin(a / 2), (0.9 + w * Math.cos(a / 2)) * Math.sin(a)];
+      }, 40, 4, 60, 4),
+    }),
+  },
+  espiral: {
+    nome: "ESPIRAL",
+    fazer: () => ({ linhas: [curva((u) => { const a = u * Math.PI * 10, r = 0.05 + u * 1.1; return [Math.cos(a) * r, (u - 0.5) * 0.4, Math.sin(a) * r]; }, 400)] }),
+  },
+  mola: {
+    nome: "MOLA",
+    fazer: () => ({ linhas: [curva((u) => { const a = u * Math.PI * 16; return [Math.cos(a) * 0.5, -1.1 + u * 2.2, Math.sin(a) * 0.5]; }, 500)] }),
+  },
+  hiperboloide: {
+    nome: "HIPERBOLOIDE",
+    fazer: () => {
+      const linhas = [];
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2;
+        linhas.push([[Math.cos(a) * 0.8, -1, Math.sin(a) * 0.8], [Math.cos(a + 2) * 0.8, 1, Math.sin(a + 2) * 0.8]]);
+      }
+      linhas.push(circulo(0.8, -1, 40), circulo(0.8, 1, 40), circulo(0.43, 0, 40));
+      return { linhas };
+    },
+  },
+  onda: {
+    nome: "ONDA",
+    fazer: () => ({}),
+    dinamico: (t) => grade((u, v) => {
+      const x = (u - 0.5) * 2.2, z = (v - 0.5) * 2.2, r = Math.hypot(x, z);
+      return [x, 0.25 * Math.sin(r * 5 - t / 300) / (1 + r), z];
+    }, 14, 14, 24, 24),
+  },
+  tesserato: {
+    nome: "TESSERATO (4D)",
+    fazer: () => ({}),
+    dinamico: (t) => {
+      const vs = [];
+      for (let i = 0; i < 16; i++) vs.push([i & 1 ? 1 : -1, i & 2 ? 1 : -1, i & 4 ? 1 : -1, i & 8 ? 1 : -1]);
+      const a = t / 2200, c = Math.cos(a), s2 = Math.sin(a);
+      const p = vs.map(([x, y, z, w]) => {
+        const x2 = x * c - w * s2, w2 = x * s2 + w * c;
+        const k = 1.6 / (3 - w2);
+        return [x2 * k * 0.55, y * k * 0.55, z * k * 0.55];
+      });
+      const linhas = [];
+      for (let i = 0; i < 16; i++) for (let b = 0; b < 4; b++) { const j = i ^ (1 << b); if (i < j) linhas.push([p[i], p[j]]); }
+      return linhas;
+    },
+  },
+  carro: {
+    nome: "CARRO",
+    fazer: () => {
+      const linhas = [...caixa(0, -0.25, 0, 2.0, 0.4, 0.9)];
+      const cab = [[-0.55, -0.05], [-0.3, 0.35], [0.4, 0.35], [0.65, -0.05]];
+      for (const z of [-0.42, 0.42]) linhas.push(cab.map(([x, y]) => [x, y, z]));
+      for (const [x, y] of cab) linhas.push([[x, y, -0.42], [x, y, 0.42]]);
+      for (const x of [-0.6, 0.6]) for (const z of [-0.47, 0.47]) {
+        linhas.push(circulo(0.22, z, 24, "z").map(([a, b, c]) => [a + x, b - 0.45, c]));
+        linhas.push(circulo(0.1, z, 16, "z").map(([a, b, c]) => [a + x, b - 0.45, c]));
+      }
+      return { linhas };
+    },
+  },
+  casa: {
+    nome: "CASA",
+    fazer: () => {
+      const linhas = caixa(0, -0.35, 0, 1.4, 0.9, 1.1);
+      const a = [-0.7, 0.1], b = [0.7, 0.1], topo = 0.75;
+      for (const z of [-0.55, 0.55]) linhas.push([[a[0], a[1], z], [0, topo, z], [b[0], b[1], z]]);
+      linhas.push([[0, topo, -0.55], [0, topo, 0.55]]);
+      linhas.push([[-0.15, -0.8, 0.55], [-0.15, -0.35, 0.55], [0.15, -0.35, 0.55], [0.15, -0.8, 0.55]]);
+      linhas.push([[0.3, -0.15, 0.55], [0.55, -0.15, 0.55], [0.55, -0.4, 0.55], [0.3, -0.4, 0.55], [0.3, -0.15, 0.55]]);
+      linhas.push([[0.3, 0.2, -0.3], [0.3, 0.6, -0.3], [0.45, 0.6, -0.3], [0.45, 0.32, -0.3]]);
+      return { linhas };
+    },
+  },
+  cidade: {
+    nome: "CIDADE",
+    fazer: () => {
+      const linhas = [], r = semente(21);
+      for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+        const h = 0.2 + r() * (1.6 - (Math.abs(i) + Math.abs(j)) * 0.2);
+        linhas.push(...caixa(i * 0.42, -1 + h / 2, j * 0.42, 0.3, h, 0.3));
+      }
+      return { linhas };
+    },
+  },
+  arvore: {
+    nome: "ÁRVORE",
+    fazer: () => {
+      const linhas = cilindro(0.1, -1.1, -0.5, 12, 4);
+      linhas.push(...mover(cone(0.8, 0, 0.7, 28, 10), 0, -0.55, 0), ...mover(cone(0.62, 0, 0.6, 24, 10), 0, -0.1, 0), ...mover(cone(0.45, 0, 0.55, 20, 8), 0, 0.35, 0));
+      return { linhas };
+    },
+  },
+  montanha: {
+    nome: "MONTANHAS",
+    fazer: () => ({
+      linhas: grade((u, v) => {
+        const x = (u - 0.5) * 2.4, z = (v - 0.5) * 2.4;
+        const h = 0.9 * Math.exp(-((x + 0.3) ** 2 + z ** 2) * 2) + 0.6 * Math.exp(-((x - 0.6) ** 2 + (z - 0.4) ** 2) * 3) + 0.05 * Math.sin(x * 7) * Math.cos(z * 6);
+        return [x, h - 0.5, z];
+      }, 18, 18, 30, 30),
+    }),
+  },
+  aviao: {
+    nome: "AVIÃO",
+    fazer: () => {
+      const linhas = girarTudo(cilindro(0.16, -1.1, 0.9, 20, 8, 4), 0, 0, Math.PI / 2);
+      linhas.push(...girarTudo(cone(0.16, 0, 0.3, 20, 8), 0, 0, -Math.PI / 2).map((l) => l.map(([x, y, z]) => [x + 0.9, y, z])));
+      linhas.push([[0.25, 0, 0.15], [-0.25, 0, 1.2], [-0.5, 0, 1.2], [-0.2, 0, 0.15]]);
+      linhas.push([[0.25, 0, -0.15], [-0.25, 0, -1.2], [-0.5, 0, -1.2], [-0.2, 0, -0.15]]);
+      linhas.push([[-0.85, 0.1, 0], [-1.1, 0.55, 0], [-1.2, 0.55, 0], [-1.1, 0.1, 0]]);
+      linhas.push([[-0.9, 0, 0.1], [-1.1, 0, 0.45], [-1.15, 0, 0.1]], [[-0.9, 0, -0.1], [-1.1, 0, -0.45], [-1.15, 0, -0.1]]);
+      return { linhas };
+    },
+  },
+  barco: {
+    nome: "BARCO",
+    fazer: () => {
+      const linhas = [];
+      for (const [k, y] of [[1, -0.2], [0.75, -0.4], [0.45, -0.55]]) {
+        linhas.push(curva((u) => { const a = u * Math.PI * 2; return [Math.cos(a) * 1.1 * k, y, Math.sin(a) * 0.4 * k * (Math.cos(a) > 0 ? 1 - Math.cos(a) * 0.6 : 1)]; }, 60));
+      }
+      linhas.push([[0, -0.2, 0], [0, 1.1, 0]], [[0, 1.0, 0], [0.75, -0.1, 0], [0, -0.1, 0]], [[0, 0.95, 0], [-0.6, 0, 0], [0, 0, 0]]);
+      return { linhas };
+    },
+  },
+  bicicleta: {
+    nome: "BICICLETA",
+    fazer: () => {
+      const linhas = [];
+      for (const x of [-0.7, 0.7]) {
+        linhas.push(circulo(0.45, 0, 40, "z").map(([a, b]) => [a + x, b - 0.4, 0]));
+        for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI; linhas.push([[x + Math.cos(a) * 0.45, -0.4 + Math.sin(a) * 0.45, 0], [x - Math.cos(a) * 0.45, -0.4 - Math.sin(a) * 0.45, 0]]); }
+      }
+      linhas.push([[-0.7, -0.4, 0], [-0.1, -0.4, 0], [0.45, 0.15, 0], [-0.2, 0.15, 0], [-0.7, -0.4, 0]], [[-0.1, -0.4, 0], [-0.25, 0.3, 0]], [[0.45, 0.15, 0], [0.7, -0.4, 0]], [[0.45, 0.15, 0], [0.4, 0.4, 0]], [[0.4, 0.4, -0.25], [0.4, 0.4, 0.25]], [[-0.38, 0.3, 0], [-0.1, 0.3, 0]]);
+      return { linhas };
+    },
+  },
+  relogio: {
+    nome: "RELÓGIO",
+    fazer: () => {
+      const linhas = [circulo(1, 0, 60, "z"), circulo(1, -0.12, 60, "z"), circulo(0.04, 0.02, 10, "z")];
+      for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; linhas.push([[Math.sin(a) * 0.85, Math.cos(a) * 0.85, 0], [Math.sin(a) * 0.97, Math.cos(a) * 0.97, 0]]); }
+      return { linhas };
+    },
+    // os ponteiros seguem a hora de verdade
+    dinamico: () => {
+      const d = new Date();
+      const s2 = d.getSeconds() + d.getMilliseconds() / 1000, m = d.getMinutes() + s2 / 60, h = (d.getHours() % 12) + m / 60;
+      const ponteiro = (frac, l) => [[0, 0, 0.02], [Math.sin(frac * Math.PI * 2) * l, Math.cos(frac * Math.PI * 2) * l, 0.02]];
+      return [ponteiro(h / 12, 0.5), ponteiro(m / 60, 0.75), ponteiro(s2 / 60, 0.85)];
+    },
+  },
+  ampulheta: {
+    nome: "AMPULHETA",
+    fazer: () => {
+      const linhas = [circulo(0.6, 1, 32), circulo(0.6, -1, 32), circulo(0.07, 0, 12)];
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; linhas.push([[Math.cos(a) * 0.6, 1, Math.sin(a) * 0.6], [Math.cos(a) * 0.07, 0, Math.sin(a) * 0.07], [Math.cos(a) * 0.6, -1, Math.sin(a) * 0.6]]); }
+      linhas.push(...caixa(0, 1.05, 0, 1.45, 0.1, 1.45), ...caixa(0, -1.05, 0, 1.45, 0.1, 1.45));
+      return { linhas: escalar(linhas, 0.75) };
+    },
+  },
+  engrenagem: {
+    nome: "ENGRENAGEM",
+    fazer: () => {
+      const perfil = curva((u) => { const a = u * Math.PI * 2, dente = Math.cos(a * 12) > 0.3 ? 1 : 0.82; return [Math.cos(a) * dente, Math.sin(a) * dente, 0]; }, 360);
+      const linhas = [mover([perfil], 0, 0, 0.15)[0], mover([perfil], 0, 0, -0.15)[0], circulo(0.3, 0.15, 30, "z"), circulo(0.3, -0.15, 30, "z")];
+      for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; linhas.push([[Math.cos(a) * 0.3, Math.sin(a) * 0.3, 0.15], [Math.cos(a) * 0.78, Math.sin(a) * 0.78, 0.15]]); }
+      return { linhas };
+    },
+  },
+  lampada: {
+    nome: "LÂMPADA",
+    fazer: () => {
+      const linhas = mover(esferaLinhas(0.6, 7, 8), 0, 0.3, 0).filter((l) => l.some((p) => p[1] > -0.15));
+      linhas.push(...cilindro(0.25, -0.75, -0.25, 20, 6, 5));
+      linhas.push(curva((u) => [(u - 0.5) * 0.3, 0.2 + Math.sin(u * Math.PI * 6) * 0.06, 0], 40), [[-0.15, 0.2, 0], [-0.12, -0.25, 0]], [[0.15, 0.2, 0], [0.12, -0.25, 0]]);
+      return { linhas };
+    },
+  },
+  trofeu: {
+    nome: "TROFÉU",
+    fazer: () => {
+      const linhas = [];
+      for (let i = 0; i <= 5; i++) { const u = i / 5; linhas.push(circulo(0.25 + 0.45 * Math.sqrt(u), 0.05 + u * 0.75, 32)); }
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; linhas.push(curva((u) => [Math.cos(a) * (0.25 + 0.45 * Math.sqrt(u)), 0.05 + u * 0.75, Math.sin(a) * (0.25 + 0.45 * Math.sqrt(u))], 12)); }
+      for (const s2 of [-1, 1]) linhas.push(curva((u) => { const a = u * Math.PI; return [s2 * (0.65 + Math.sin(a) * 0.3), 0.7 - u * 0.45, 0]; }, 20));
+      linhas.push(...cilindro(0.08, -0.45, 0.05, 12, 4), ...caixa(0, -0.6, 0, 0.7, 0.3, 0.7));
+      return { linhas };
+    },
+  },
+  coroa: {
+    nome: "COROA",
+    fazer: () => {
+      const linhas = [circulo(0.8, -0.4, 48), circulo(0.8, -0.2, 48)];
+      linhas.push(curva((u) => { const a = u * Math.PI * 2, pico = Math.abs(Math.sin(a * 4)); return [Math.cos(a) * 0.8, -0.2 + pico * 0.7, Math.sin(a) * 0.8]; }, 160));
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2 + Math.PI / 8; linhas.push(...mover(esferaLinhas(0.06, 3, 4), Math.cos(a) * 0.8, 0.52, Math.sin(a) * 0.8)); }
+      return { linhas };
+    },
+  },
+  dado: {
+    nome: "DADO",
+    fazer: () => {
+      const linhas = caixa(0, 0, 0, 1.4, 1.4, 1.4);
+      const ponto = (x, y, z, eixo) => circulo(0.1, 0, 12, eixo).map(([a, b, c]) => [a + x, b + y, c + z]);
+      linhas.push(ponto(0, 0, 0.7, "z"));
+      linhas.push(ponto(-0.35, 0.7, -0.35, "y"), ponto(0, 0.7, 0, "y"), ponto(0.35, 0.7, 0.35, "y"));
+      for (const [y, z] of [[-0.35, -0.35], [0.35, 0.35], [-0.35, 0.35], [0.35, -0.35]]) linhas.push(ponto(0.7, y, z, "x").map(([a, b, c]) => [0.7, b, c]));
+      return { linhas };
+    },
+  },
+  robo: {
+    nome: "ROBÔ",
+    fazer: () => ({
+      linhas: [
+        ...caixa(0, 0.8, 0, 0.6, 0.45, 0.5), ...caixa(0, 0.05, 0, 0.9, 0.9, 0.55), ...caixa(-0.6, 0.1, 0, 0.2, 0.75, 0.2), ...caixa(0.6, 0.1, 0, 0.2, 0.75, 0.2),
+        ...caixa(-0.22, -0.8, 0, 0.25, 0.7, 0.25), ...caixa(0.22, -0.8, 0, 0.25, 0.7, 0.25),
+        circulo(0.07, 0.25, 12, "z").map(([a, b, c]) => [a - 0.13, b + 0.6, c]), circulo(0.07, 0.25, 12, "z").map(([a, b, c]) => [a + 0.13, b + 0.6, c]),
+        [[0, 1.02, 0], [0, 1.25, 0]], circulo(0.2, 0.28, 20, "z").map(([a, b, c]) => [a, b + 0.05, c]),
+      ],
+    }),
+  },
+  drone: {
+    nome: "DRONE",
+    fazer: () => {
+      const linhas = caixa(0, 0, 0, 0.45, 0.15, 0.45);
+      for (const [x, z] of [[0.75, 0.75], [-0.75, 0.75], [0.75, -0.75], [-0.75, -0.75]]) {
+        linhas.push([[Math.sign(x) * 0.2, 0, Math.sign(z) * 0.2], [x, 0.05, z]], [[x, 0.05, z], [x, 0.15, z]]);
+        linhas.push(circulo(0.35, 0.15, 30).map(([a, b, c]) => [a + x, b, c + z]));
+      }
+      return { linhas };
+    },
+    dinamico: (t) => [[0.75, 0.75], [-0.75, 0.75], [0.75, -0.75], [-0.75, -0.75]].map(([x, z], i) => {
+      const a = t / 40 + i;
+      return [[x + Math.cos(a) * 0.33, 0.16, z + Math.sin(a) * 0.33], [x - Math.cos(a) * 0.33, 0.16, z - Math.sin(a) * 0.33]];
+    }),
+  },
+  xicara: {
+    nome: "XÍCARA DE CAFÉ",
+    fazer: () => {
+      const linhas = [];
+      for (let i = 0; i <= 4; i++) { const u = i / 4; linhas.push(circulo(0.45 + u * 0.15, -0.5 + u * 0.9, 32)); }
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; linhas.push([[Math.cos(a) * 0.45, -0.5, Math.sin(a) * 0.45], [Math.cos(a) * 0.6, 0.4, Math.sin(a) * 0.6]]); }
+      linhas.push(curva((u) => { const a = -Math.PI / 2 + u * Math.PI; return [0.55 + Math.cos(a) * 0.3, -0.05 + Math.sin(a) * 0.28, 0]; }, 20), circulo(0.8, -0.55, 40));
+      for (const x of [-0.15, 0.1]) linhas.push(curva((u) => [x + Math.sin(u * 9) * 0.06, 0.5 + u * 0.6, 0], 30));
+      return { linhas };
+    },
+  },
+  livro: {
+    nome: "LIVRO",
+    fazer: () => {
+      const linhas = [];
+      for (const lado of [-1, 1]) for (let k = 0; k < 5; k++) {
+        const curv = (u) => [lado * u * 1.0, 0.12 * Math.sin(u * Math.PI) - k * 0.03, 0];
+        const topo = curva((u) => { const p = curv(u); return [p[0], p[1], -0.7]; }, 16), base = curva((u) => { const p = curv(u); return [p[0], p[1], 0.7]; }, 16);
+        linhas.push(topo, base, [topo[16], base[16]]);
+      }
+      for (let i = 1; i <= 5; i++) linhas.push([[0.15, 0.1, -0.5 + i * 0.18], [0.85, 0.05, -0.5 + i * 0.18]], [[-0.15, 0.1, -0.5 + i * 0.18], [-0.85, 0.05, -0.5 + i * 0.18]]);
+      return { linhas };
+    },
+  },
+  notebook: {
+    nome: "NOTEBOOK",
+    fazer: () => {
+      const linhas = caixa(0, -0.5, 0.2, 1.6, 0.07, 1.0);
+      const tela = girarTudo(caixa(0, 0.5, 0, 1.6, 1.0, 0.05), -0.25, 0, 0).map((l) => l.map(([x, y, z]) => [x, y - 0.5, z - 0.3]));
+      linhas.push(...tela);
+      for (let i = 0; i < 4; i++) linhas.push([[-0.65, -0.46, 0.0 + i * 0.12], [0.65, -0.46, 0.0 + i * 0.12]]);
+      linhas.push(...caixa(0, -0.46, 0.55, 0.45, 0.01, 0.25));
+      return { linhas };
+    },
+  },
+  celular: {
+    nome: "CELULAR",
+    fazer: () => {
+      const linhas = caixa(0, 0, 0, 0.8, 1.6, 0.08);
+      linhas.push([[-0.33, 0.68, 0.045], [0.33, 0.68, 0.045], [0.33, -0.68, 0.045], [-0.33, -0.68, 0.045], [-0.33, 0.68, 0.045]]);
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) linhas.push(circulo(0.05, 0.05, 10, "z").map(([a, b]) => [a - 0.22 + j * 0.15, b + 0.45 - i * 0.2, 0.05]));
+      linhas.push(circulo(0.05, 0, 10, "z").map(([a, b]) => [a, b - 0.6, -0.05]));
+      return { linhas };
+    },
+  },
+  escudo: {
+    nome: "ESCUDO",
+    fazer: () => {
+      const contorno = (k, z) => curva((u) => { const a = u * Math.PI * 2; const x = Math.sin(a) * 0.85 * k, y = (Math.cos(a) > 0 ? Math.cos(a) * 0.9 : Math.cos(a) * 1.15) * k; return [x, y + 0.1, z - Math.abs(x) * 0.25]; }, 80);
+      return { linhas: [contorno(1, 0.1), contorno(0.8, 0.12), contorno(0.4, 0.15), [[0, 1.0, 0.1], [0, -1.05, 0.1]], [[-0.85, 0.15, -0.1], [0.85, 0.15, -0.1]]] };
+    },
+  },
+  espada: {
+    nome: "ESPADA",
+    fazer: () => ({
+      linhas: [
+        [[-0.06, -0.2, 0], [-0.06, 1.1, 0], [0, 1.25, 0], [0.06, 1.1, 0], [0.06, -0.2, 0]], [[0, -0.2, 0], [0, 1.2, 0]],
+        ...caixa(0, -0.25, 0, 0.6, 0.08, 0.12), ...cilindro(0.045, -0.75, -0.3, 10, 4, 4), ...mover(esferaLinhas(0.08, 3, 4), 0, -0.82, 0),
+      ],
+    }),
+  },
+  ondasonora: {
+    nome: "ONDA SONORA",
+    fazer: () => ({ linhas: [circulo(1.2, -0.6, 60)] }),
+    // as barras seguem o microfone (ou a voz dele, quando fala)
+    dinamico: (t) => {
+      const linhas = [];
+      const nivelAgora = Math.min(1, (estado === "speaking" ? nivel : micNivel * 8) + 0.1);
+      for (let i = 0; i < 32; i++) {
+        const a = (i / 32) * Math.PI * 2;
+        const h = 0.1 + nivelAgora * (0.4 + 0.6 * Math.abs(Math.sin(i * 1.7 + t / 120)));
+        linhas.push([[Math.cos(a) * 0.9, -0.6, Math.sin(a) * 0.9], [Math.cos(a) * 0.9, -0.6 + h * 1.4, Math.sin(a) * 0.9]]);
+      }
+      return linhas;
+    },
+  },
+  grafico: {
+    nome: "GRÁFICO",
+    fazer: () => {
+      const linhas = [[[-1.1, -0.8, -0.7], [1.1, -0.8, -0.7]], [[-1.1, -0.8, -0.7], [-1.1, 1.0, -0.7]], [[-1.1, -0.8, -0.7], [-1.1, -0.8, 0.7]]];
+      const r = semente(17);
+      for (let i = 0; i < 5; i++) for (let j = 0; j < 3; j++) {
+        const h = 0.2 + r() * 1.4 * (0.5 + i * 0.12);
+        linhas.push(...caixa(-0.85 + i * 0.42, -0.8 + h / 2, -0.4 + j * 0.4, 0.25, h, 0.25));
+      }
+      return { linhas };
+    },
+  },
+});
+
+Object.assign(FALA_FORMA, {
+  lua: "a Lua", sol: "o Sol", cometa: "um cometa", estrela: "uma estrela", buraconegro: "um buraco negro", satelite: "um satélite", ovni: "um disco voador",
+  molecula: "uma molécula de água", benzeno: "um anel de benzeno", cristal: "uma rede cristalina", celula: "uma célula", cerebro: "um cérebro", olho: "um olho",
+  tetraedro: "um tetraedro", octaedro: "um octaedro", icosaedro: "um icosaedro", dodecaedro: "um dodecaedro", bola: "uma bola de futebol", cilindro: "um cilindro", cone: "um cone",
+  no: "um nó toroidal", mobius: "uma fita de Möbius", espiral: "uma espiral", mola: "uma mola", hiperboloide: "um hiperboloide", onda: "uma onda", tesserato: "um tesserato em quatro dimensões",
+  carro: "um carro", casa: "uma casa", cidade: "uma cidade", arvore: "uma árvore", montanha: "montanhas", aviao: "um avião", barco: "um barco", bicicleta: "uma bicicleta",
+  relogio: "um relógio", ampulheta: "uma ampulheta", engrenagem: "uma engrenagem", lampada: "uma lâmpada", trofeu: "um troféu", coroa: "uma coroa", dado: "um dado",
+  robo: "um robô", drone: "um drone", xicara: "uma xícara de café", livro: "um livro", notebook: "um notebook", celular: "um celular", escudo: "um escudo", espada: "uma espada",
+  ondasonora: "uma onda sonora", grafico: "um gráfico",
+});
+
+// Os nomes mais específicos vêm antes dos genéricos (ex.: "bola de futebol" antes de "bola").
+PALAVRAS_HOLO.unshift(
+  [/buraco negro/, "buraconegro"], [/disco voador|ovni|alienigena|nave alien/, "ovni"], [/satelite/, "satelite"], [/cometa|meteoro|asteroide/, "cometa"],
+  [/\blua\b/, "lua"], [/\bsol\b/, "sol"], [/estrela(?!s)/, "estrela"],
+  [/molecula de agua|\bagua\b|h2o/, "molecula"], [/benzeno/, "benzeno"], [/rede cristalina|cristalin|\bsal\b/, "cristal"], [/celula/, "celula"], [/cerebro|\bmente\b|neuroni/, "cerebro"], [/\bolho|visao/, "olho"],
+  [/tetraedro/, "tetraedro"], [/octaedro/, "octaedro"], [/icosaedro/, "icosaedro"], [/dodecaedro/, "dodecaedro"], [/bola de futebol|futebol|\bgol\b/, "bola"],
+  [/cilindro/, "cilindro"], [/\bcone\b/, "cone"], [/\bno\b|toroidal/, "no"], [/mobius/, "mobius"], [/espiral|fibonacci|caracol/, "espiral"], [/\bmola\b/, "mola"], [/hiperboloide/, "hiperboloide"],
+  [/onda sonora|\bsom\b|musica|equalizador|audio/, "ondasonora"], [/\bonda|\bmar\b|oceano|agua batendo/, "onda"], [/tesserato|hipercubo|4d|quarta dimensao|quatro dimensoes/, "tesserato"],
+  [/\bcarro|automovel|veiculo/, "carro"], [/\bcasa\b|\blar\b|residencia/, "casa"], [/cidade|predio|arranha/, "cidade"], [/arvore|floresta|natureza|pinheiro/, "arvore"], [/montanha|terreno|relevo|serra/, "montanha"],
+  [/aviao|aeronave|\bvoo\b/, "aviao"], [/barco|navio|veleiro/, "barco"], [/bicicleta|bike/, "bicicleta"], [/relogio|ponteiro/, "relogio"], [/ampulheta/, "ampulheta"],
+  [/engrenagem|mecanic|maquina|motor/, "engrenagem"], [/lampada|ideia/, "lampada"], [/trofeu|campeao|vitoria|taca/, "trofeu"], [/coroa|\brei\b|rainha/, "coroa"], [/\bdado\b/, "dado"],
+  [/robo|androide/, "robo"], [/drone/, "drone"], [/xicara|cafe/, "xicara"], [/livro|leitura/, "livro"], [/notebook|computador|laptop|\bpc\b/, "notebook"], [/celular|telefone|smartphone/, "celular"],
+  [/escudo|protecao|seguranca/, "escudo"], [/espada|medieval|cavaleiro/, "espada"], [/grafico|estatistica|financ|dinheiro|investiment/, "grafico"],
+);
+
 let holo = null; // { forma, nome, inicio, ate, lista }
 
 function mostrarHolograma(chave) {
   if (holo && holo.chave === chave) { holo.ate = performance.now() + 45000; return; }
   const f = FORMAS[chave];
-  holo = { ...f.fazer(), chave, nome: f.nome, inicio: performance.now(), ate: performance.now() + 45000, yaw: 0, pitch: 0, vx: 0, vy: 0, zoom: 1, soltouEm: 0 };
+  holo = { linhas: [], ...f.fazer(), dinamico: f.dinamico || null, chave, nome: f.nome, inicio: performance.now(), ate: performance.now() + 45000, yaw: 0, pitch: 0, vx: 0, vy: 0, zoom: 1, soltouEm: 0 };
 }
 
 // Hologramas sozinhos: o assunto da conversa decide a forma (preferência autoHolo).
@@ -3636,6 +4281,19 @@ const ASSUNTOS_HOLO = [
   [/\btoro\b|rosquinha|donut/, "toro"],
   [/\besfera\b/, "esfera"],
 ];
+ASSUNTOS_HOLO.unshift(
+  [/buraco negro/, "buraconegro"], [/disco voador|\bovni|alienigena|extraterrestre/, "ovni"], [/satelite/, "satelite"], [/cometa|meteoro|asteroide/, "cometa"],
+  [/\blua\b|lunar|eclipse/, "lua"], [/\bo sol\b|energia solar|solar\b/, "sol"],
+  [/benzeno/, "benzeno"], [/cristalin/, "cristal"], [/celula|biologia/, "celula"], [/cerebro|neuroni|neurocien|memoria humana/, "cerebro"], [/\bolhos?\b|visao humana|oftalmo/, "olho"],
+  [/futebol|copa do mundo|\bgol\b/, "bola"], [/tesserato|hipercubo|quarta dimensao|quatro dimensoes/, "tesserato"], [/fibonacci|espiral/, "espiral"], [/mobius/, "mobius"],
+  [/geometria|poliedro|icosaedro/, "icosaedro"], [/dodecaedro/, "dodecaedro"], [/octaedro/, "octaedro"], [/tetraedro/, "tetraedro"],
+  [/musica|cancao|cantor|banda|\bsom\b/, "ondasonora"], [/oceano|\bmar\b|\bondas?\b|surf/, "onda"],
+  [/\bcarros?\b|automovel|corrida de|formula 1/, "carro"], [/cidade|predio|arquitetura|urbanism/, "cidade"], [/arvore|floresta|natureza|ecologia|amazonia/, "arvore"], [/montanha|trilha|escalada|everest/, "montanha"],
+  [/aviao|aeroporto|\bvoo\b|viagem/, "aviao"], [/barco|navio|velejar|porto\b/, "barco"], [/bicicleta|ciclismo|pedalar/, "bicicleta"], [/relogio|horario|pontualidade/, "relogio"], [/ampulheta|prazo/, "ampulheta"],
+  [/engrenagem|mecanic|engenharia|\bmotor\b/, "engrenagem"], [/lampada|invencao|inventor|criatividade/, "lampada"], [/trofeu|campeao|campeonato|vitoria|premio/, "trofeu"], [/\brei\b|rainha|monarquia|imperio/, "coroa"],
+  [/robo|robotica|androide|automacao/, "robo"], [/\bdrone/, "drone"], [/\bcafe\b|cafeina/, "xicara"], [/\blivros?\b|leitura|estudar|estudo/, "livro"], [/programacao|programar|codigo|computador|notebook|software/, "notebook"],
+  [/celular|smartphone|aplicativo/, "celular"], [/seguranca|protecao|defesa/, "escudo"], [/medieval|cavaleiro|espada/, "espada"], [/grafico|estatistica|financas|investiment|bolsa de valores|economia/, "grafico"],
+);
 function holoDoAssunto(...textos) {
   if (!autoHolo) return false;
   for (const texto of textos) {
@@ -3650,8 +4308,25 @@ function mostrarHologramaDeTexto(titulo, linhas) {
   holo = { linhas: [], texto: linhas, nome: titulo, inicio: performance.now(), ate: performance.now() + 45000, yaw: 0, pitch: 0, vx: 0, vy: 0, zoom: 1, soltouEm: 0 };
 }
 
+let desfile = null;
+function iniciarDesfile() {
+  clearInterval(desfile);
+  const chaves = Object.keys(FORMAS);
+  let i = 0;
+  holo = null;
+  mostrarHolograma(chaves[i]);
+  desfile = setInterval(() => {
+    if (!holo || dormindo) { clearInterval(desfile); desfile = null; return; }
+    i = (i + 1) % chaves.length;
+    holo = null;
+    mostrarHolograma(chaves[i]);
+    contato();
+  }, 4000);
+}
+
 function fecharHolograma() {
   holo = null;
+  if (desfile) { clearInterval(desfile); desfile = null; }
 }
 
 // Desenha a projeção: arame girando, montagem rápida ao aparecer, cintilação,
@@ -3711,11 +4386,12 @@ function desenharHolograma(t, cx, cy, R, dpr) {
   ctx.shadowColor = rgba(cor, 0.9);
   ctx.shadowBlur = 10 * dpr;
   ctx.lineWidth = 1.3 * dpr;
-  if (holo.linhas.length) {
-    const total = holo.linhas.length;
-    const ate = Math.ceil(total * monta);
-    for (let k = 0; k < ate; k++) {
-      const linha = holo.linhas[k];
+  const animadas = holo.dinamico && monta >= 1 ? holo.dinamico(t) : [];
+  const todas = animadas.length ? holo.linhas.concat(animadas) : holo.linhas;
+  if (todas.length) {
+    const ate = holo.linhas.length ? Math.ceil(holo.linhas.length * monta) + animadas.length : todas.length;
+    for (let k = 0; k < ate && k < todas.length; k++) {
+      const linha = todas[k];
       ctx.beginPath();
       let fundo = 0;
       linha.forEach((ponto, i) => {
