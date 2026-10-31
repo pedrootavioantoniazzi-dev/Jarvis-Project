@@ -2134,7 +2134,10 @@ const PERSONA = [
   "Respostas curtas por padrão, de uma a três frases; dê detalhes só quando o usuário pedir.",
   "Suas respostas são faladas em voz alta: escreva como quem conversa, em frases curtas e naturais. Nada de listas, tópicos, títulos, negrito, tabelas ou markdown.",
   "Nunca use emojis nem emoticons.",
-  "O painel em que você roda projeta hologramas 3D (planeta, terra, esfera, cubo, pirâmide, DNA, átomo, toro, coração, diamante, foguete, galáxia, pendências, memória) e abre sites (Instagram, YouTube, WhatsApp, Gmail, Spotify, Google, mapas) quando o usuário pede com essas palavras. Se ele perguntar o que você sabe fazer, cite isso. Você não lê mensagens nem o feed do Instagram.",
+  "Você controla o painel com marcações que o usuário não vê. Quando ele pedir um holograma, uma projeção ou para mostrar algo em 3D, termine a resposta com [HOLOGRAMA: forma], usando uma destas formas: planeta, terra, esfera, cubo, piramide, dna, atomo, toro, coracao, diamante, foguete, galaxia, pendencias, memoria. Se ele pedir uma forma que não está na lista, diga que ainda não sabe projetar isso e cite as opções, sem marcação.",
+  "Quando ele pedir para abrir um site ou aplicativo, termine com [ABRIR: nome], com um destes nomes: instagram, mensagens do instagram, youtube, whatsapp, gmail, spotify, tiktok, facebook, x, netflix, github, google, agenda, maps. Para pesquisar algo na internet, termine com [PESQUISAR: termo]; no YouTube, com [YOUTUBE: termo].",
+  "Exemplo: o usuário diz 'me mostra um átomo em 3D' e você responde 'Projetando um átomo, senhor. [HOLOGRAMA: atomo]'. Nunca diga que fez algo dessas coisas sem colocar a marcação.",
+  "Você não lê mensagens nem o feed do Instagram.",
   "Você não tem acesso à internet: se perguntarem notícias, clima ou preços de hoje, diga que não consegue ver isso daqui.",
   "Nunca invente fatos. Se não souber, diga que não sabe.",
 ].join("\n");
@@ -2327,7 +2330,37 @@ function tirarDoHistorico(msg) {
 }
 
 function semPensamento(texto) {
-  return semEmoji(texto.replace(/<think>[\s\S]*?(<\/think>|$)/g, "")).trimStart();
+  return semEmoji(semMarcacoes(texto.replace(/<think>[\s\S]*?(<\/think>|$)/g, ""))).trimStart();
+}
+
+// As marcações [HOLOGRAMA: …] [ABRIR: …] [PESQUISAR: …] [YOUTUBE: …] são ordens
+// para o painel: somem do texto mostrado e falado (inclusive pela metade, durante a resposta).
+const RE_MARCACAO = /\[\s*(HOLOGRAMA|ABRIR|PESQUISAR|YOUTUBE)\s*:\s*([^\]]*)\]/gi;
+function semMarcacoes(texto) {
+  return texto.replace(RE_MARCACAO, "").replace(/\[\s*(H|HO|HOL|HOLO|A|AB|ABR|ABRI|ABRIR|P|PE|PES|PESQ|Y|YO|YOU)[^\]]*$/i, "").replace(/[ \t]+$/gm, "");
+}
+
+function executarMarcacoes(bruto) {
+  for (const [, tipo, valorBruto] of bruto.matchAll(RE_MARCACAO)) {
+    const valor = valorBruto.trim();
+    const v = semAcento(valor);
+    const t2 = tipo.toUpperCase();
+    if (t2 === "HOLOGRAMA") {
+      if (/pendencia|tarefa/.test(v)) comandoLocal("holograma das pendências");
+      else if (/memoria/.test(v)) comandoLocal("holograma da memória");
+      else {
+        const chave = FORMAS[v] ? v : (PALAVRAS_HOLO.find(([re]) => re.test(v)) || [])[1];
+        if (chave) mostrarHolograma(chave);
+      }
+    } else if (t2 === "ABRIR") {
+      const site = /mensage|direct|dm/.test(v) ? SITES[0] : SITES.find(([re]) => re.test(v));
+      if (site) abrirSite(site[1], site[2]);
+    } else if (t2 === "PESQUISAR" && valor) {
+      abrirSite("https://www.google.com/search?q=" + encodeURIComponent(valor), "o Google");
+    } else if (t2 === "YOUTUBE" && valor) {
+      abrirSite("https://www.youtube.com/results?search_query=" + encodeURIComponent(valor), "o YouTube");
+    }
+  }
 }
 
 // O modelo às vezes coloca emojis mesmo pedindo que não: eles saem aqui.
@@ -2430,6 +2463,7 @@ async function perguntar(texto, porVoz) {
       }
     }
     resposta = semPensamento(bruto).trim();
+    executarMarcacoes(bruto);
     if (perguntaPendente === pergunta) perguntaPendente = null;
   } catch (e) {
     tirarDoHistorico(pergunta);
@@ -3216,11 +3250,13 @@ function comandoLocal(texto) {
   let m;
 
   // hologramas
-  if (/(fech|apag|tir|some|desliga|esconde)\w*\s+(?:com\s+)?(?:o\s+)?holograma/.test(n)) {
+  // O reconhecimento de voz às vezes escreve "olograma", "holo grama" ou "holográfico".
+  const HOLO = /h?olo\s?gra(?:ma|fi)|\bprojet(?:a|e|ar|ando)\b|em\s+3\s?d|tridimension/;
+  if (/(fech|apag|tir|some|desliga|esconde)\w*\s+(?:com\s+)?(?:o\s+|a\s+)?(?:h?olo\s?grama|projecao)/.test(n)) {
     fecharHolograma();
     return "Holograma desligado.";
   }
-  if (/holograma|holografic|projet[ae]\s/.test(n)) {
+  if (HOLO.test(n)) {
     if (/pendencia|tarefa/.test(n)) {
       const abertas = tarefas.filter((x) => !x.feita).map((x) => "› " + x.texto);
       mostrarHologramaDeTexto("PENDÊNCIAS", abertas.length ? abertas : ["Nenhuma pendência."]);
