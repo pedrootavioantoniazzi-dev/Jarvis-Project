@@ -2139,10 +2139,12 @@ let OLLAMA = (parametroOllama || ler("jarvis.ollama", "http://localhost:11434"))
 let modelo = ler("jarvis.modelo", "");
 const PIPER = "piper";
 const ELEVEN = "eleven";
-// "Daniel": voz masculina pronta da ElevenLabs, grave e calma, sotaque britânico.
-const ELEVEN_VOZ_PADRAO = "onwK4e9ZLuTAKqWW03F9";
+// "Roger": voz masculina pronta da ElevenLabs, tranquila e ressonante (a escolhida).
+const ELEVEN_VOZ_PADRAO = "CwhRBWXzGAHq8TQ4Fs17";
+const ELEVEN_VOZ_ANTIGA = "onwK4e9ZLuTAKqWW03F9"; // Daniel, a padrão da versão anterior
 let elevenChave = ler("jarvis.eleven-chave", "");
 let elevenVozId = ler("jarvis.eleven-voz", ELEVEN_VOZ_PADRAO);
+if (elevenVozId === ELEVEN_VOZ_ANTIGA) { elevenVozId = ELEVEN_VOZ_PADRAO; gravar("jarvis.eleven-voz", elevenVozId); }
 let elevenFalhou = false;
 let nomeVoz = ler("jarvis.voz", PIPER);
 let vozEscolhida = ler("jarvis.voz-escolhida", "0") === "1";
@@ -2696,7 +2698,8 @@ async function sintetizarEleven(texto, sinal) {
     body: JSON.stringify({
       text: texto,
       model_id: "eleven_flash_v2_5",
-      voice_settings: { stability: 0.55, similarity_boost: 0.75 },
+      // Os mesmos ajustes da amostra escolhida: velocidade 1.0, estabilidade 50%, similaridade 75%.
+      voice_settings: { stability: 0.5, similarity_boost: 0.75, speed: 1.0 },
     }),
     signal: sinal,
   });
@@ -2712,7 +2715,7 @@ async function sintetizarEleven(texto, sinal) {
       erro.aviso = "Os créditos grátis da ElevenLabs deste mês acabaram. Até renovar, uso a voz neural do navegador.";
     } else if (r.status === 404) {
       elevenFalhou = true;
-      erro.aviso = "Não achei essa voz na ElevenLabs. Confira o ID da voz em AJUSTES (ou apague para voltar ao Daniel).";
+      erro.aviso = "Não achei essa voz na ElevenLabs. Confira o ID da voz em AJUSTES (ou apague para voltar ao Roger).";
     }
     if (elevenFalhou) carregarVozes();
     throw erro;
