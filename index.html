@@ -2199,7 +2199,7 @@ const PERSONA = [
   "Exemplo: o usuário diz 'me mostra um átomo em 3D' e você responde 'Projetando um átomo, Pedro. [HOLOGRAMA: atomo]'. Nunca diga que fez algo dessas coisas sem colocar a marcação.",
   "Mesmo sem o usuário pedir, quando o assunto da conversa combinar com uma das formas (espaço e planetas, química e átomos, genética e DNA, coração, pedras preciosas, Egito e pirâmides), coloque a marcação do holograma no fim da resposta para ilustrar.",
   "Se o usuário pedir para você desligar, dormir ou ficar em espera, despeça-se em uma frase e termine com [DESLIGAR].",
-  "O painel também resolve sozinho, sem você: lembretes e alarmes, cronômetro, contas, previsão do tempo, cotação de moedas, resumos da Wikipedia e tocar música no YouTube. Se o usuário perguntar algo disso e chegar até você, explique como pedir (ex.: 'me lembra em 10 minutos de…', 'como está o tempo em Curitiba', 'quanto está o dólar').",
+  "O painel também resolve sozinho, sem você: lembretes e alarmes, cronômetro, contas, previsão do tempo, cotação de moedas, resumos da Wikipedia, tradução, sorteios, contagem de dias, conversão de unidades, notas, modo foco, respiração guiada, senhas e tocar música no YouTube. Se o usuário perguntar algo disso e chegar até você, explique como pedir (ex.: 'me lembra em 10 minutos de…', 'como está o tempo em Curitiba', 'quanto está o dólar').",
   "Você não lê mensagens nem o feed do Instagram.",
   "Você não tem acesso à internet: se perguntarem notícias, clima ou preços de hoje, diga que não consegue ver isso daqui.",
   "Nunca invente fatos. Se não souber, diga que não sabe.",
@@ -2659,7 +2659,7 @@ function falarBloco(texto, sinal) {
     if (voz) { u.voice = voz; u.lang = voz.lang; }
     // Um pouco mais grave e pausado: soa mais como um assistente calmo.
     const neural = voz && /natural/i.test(voz.name);
-    u.rate = neural ? 1.0 : 0.95;
+    u.rate = (neural ? 1.0 : 0.95) * velocidadeFala;
     u.pitch = neural ? 0.92 : 0.85;
     // Se a voz do sistema travar sem avisar o fim, segue em frente mesmo assim.
     const limite = setTimeout(() => { pararFala(); resolve(); }, 4000 + texto.length * 150);
@@ -2830,6 +2830,8 @@ function tocar(buffer, sinal) {
   return new Promise((resolve) => {
     const fonte = audioCtx.createBufferSource();
     fonte.buffer = buffer;
+    // a voz da ElevenLabs já vem na velocidade pedida; as outras aceleram aqui
+    if (nomeVoz !== ELEVEN) fonte.playbackRate.value = velocidadeFala;
     fonte.connect(analisador);
     fonte.onended = () => { if (fonteAtual === fonte) fonteAtual = null; resolve(); };
     sinal.addEventListener("abort", () => { try { fonte.stop(); } catch (e) { /* já parou */ } }, { once: true });
@@ -2874,7 +2876,7 @@ async function sintetizarEleven(texto, sinal) {
       text: texto,
       model_id: "eleven_flash_v2_5",
       // Os mesmos ajustes da amostra escolhida: velocidade 1.0, estabilidade 50%, similaridade 75%.
-      voice_settings: { stability: 0.5, similarity_boost: 0.75, speed: 1.0 },
+      voice_settings: { stability: 0.5, similarity_boost: 0.75, speed: Math.max(0.7, Math.min(1.2, velocidadeFala)) },
     }),
     signal: sinal,
   });
@@ -4492,6 +4494,587 @@ ASSUNTOS_HOLO.unshift(
   [/robo|robotica|androide|automacao/, "robo"], [/\bdrone/, "drone"], [/\bcafe\b|cafeina/, "xicara"], [/\blivros?\b|leitura|estudar|estudo/, "livro"], [/programacao|programar|codigo|computador|notebook|software/, "notebook"],
   [/celular|smartphone|aplicativo/, "celular"], [/seguranca|protecao|defesa/, "escudo"], [/medieval|cavaleiro|espada/, "espada"], [/grafico|estatistica|financas|investiment|bolsa de valores|economia/, "grafico"],
 );
+// ---------- sedã esportivo (o carro da foto do Pedro), modelado em metros ----------
+// Proporções de um sedã médio esportivo: 4,71 m de comprimento, 1,83 m de largura,
+// 1,44 m de altura, 2,85 m entre eixos, rodas de 68 cm. Frente em +x.
+function sedanEsportivo() {
+  const S = 0.43;
+  const P = (x, y, z) => [x * S, (y - 0.72) * S, z * S];
+  const EIXOS = [1.42, -1.43], RAIO_ARCO = 0.42, CENTRO_RODA = 0.34;
+  const suave = (t) => t * t * (3 - 2 * t);
+  const meia = (x) => {
+    if (x > 1.85) return 0.915 - 0.13 * ((x - 1.85) / 0.5) ** 2;
+    if (x < -1.9) return 0.915 - 0.09 * ((-1.9 - x) / 0.45) ** 2;
+    return 0.915;
+  };
+  const cintura = (x) => {
+    if (x >= 0.95) { const t = Math.min(1, (2.35 - x) / 1.4); return 0.7 + 0.22 * suave(t); }
+    if (x >= -1.3) return 0.92 + 0.06 * ((0.95 - x) / 2.25);
+    if (x >= -1.95) return 0.98 + 0.02 * ((-1.3 - x) / 0.65);
+    return 1.0 - 0.12 * ((-1.95 - x) / 0.4) ** 2;
+  };
+  const teto = (x) => {
+    if (x > 0.05) return 0.92 + 0.5 * Math.pow(Math.max(0, (0.95 - x) / 0.9), 0.8);
+    if (x > -0.85) return 1.42 + 0.02 * Math.sin((Math.PI * (0.05 - x)) / 0.9);
+    return 1.4 - 0.42 * Math.pow(Math.min(1, (-0.85 - x) / 0.5), 1.25);
+  };
+  const naCabine = (x) => x <= 0.95 && x >= -1.35;
+  const dentroDoArco = (x, y) => EIXOS.some((e) => Math.hypot(x - e, y - CENTRO_RODA) < RAIO_ARCO + 0.02);
+  const linhas = [];
+  // polilinha que se parte onde entra no arco da roda
+  const tracar = (pontos, cortar = true) => {
+    let atual = [];
+    for (const [x, y, z] of pontos) {
+      if (cortar && dentroDoArco(x, y)) { if (atual.length > 1) linhas.push(atual); atual = []; continue; }
+      atual.push(P(x, y, z));
+    }
+    if (atual.length > 1) linhas.push(atual);
+  };
+  const xs = (de, ate, passo = 0.05) => { const v = []; for (let x = de; x >= ate - 1e-9; x -= passo) v.push(+x.toFixed(3)); return v; };
+
+  for (const lado of [1, -1]) {
+    // linhas longitudinais da carroceria
+    tracar(xs(2.3, -2.3).map((x) => [x, 0.2, lado * meia(x) * 0.96]));
+    tracar(xs(2.34, -2.33).map((x) => [x, 0.44, lado * meia(x)]));
+    tracar(xs(2.3, -2.3).map((x) => [x, Math.min(0.8, cintura(x) - 0.05), lado * meia(x)]));
+    tracar(xs(2.35, -2.35).map((x) => [x, cintura(x), lado * meia(x) * 0.95]), false);
+    // vincos do capô e da tampa do porta-malas
+    tracar(xs(2.3, 0.95).map((x) => [x, cintura(x) + 0.02, lado * meia(x) * 0.55]), false);
+    tracar(xs(-1.35, -2.3).map((x) => [x, cintura(x) + 0.02, lado * meia(x) * 0.55]), false);
+    // estufa: borda do teto e vidros laterais
+    tracar(xs(0.95, -1.35).map((x) => [x, teto(x), lado * 0.62]), false);
+    const vidro = [[0.86, cintura(0.86) + 0.03], ...xs(0.7, -1.2, 0.1).map((x) => [x, teto(x) - 0.05]), [-1.28, cintura(-1.28) + 0.04]];
+    tracar([...vidro, vidro[0]].map(([x, y]) => [x, y, lado * (0.64 + 0.24 * (1 - (y - 0.92) / 0.5))]), false);
+    tracar([[-0.25, cintura(-0.25), lado * meia(-0.25) * 0.95], [-0.25, teto(-0.25), lado * 0.62]], false);
+    // arcos das rodas (com a borda alargada)
+    for (const e of EIXOS) for (const k of [1, 1.06]) tracar(curva((u) => { const a = Math.PI * u; return [e + Math.cos(a) * RAIO_ARCO * k, CENTRO_RODA + Math.sin(a) * RAIO_ARCO * k, lado * meia(e) * (k > 1 ? 1.01 : 0.99)]; }, 24), false);
+    // portas e maçanetas
+    for (const xp of [0.9, -0.25, -1.22]) tracar(curva((u) => [xp - (xp < -1 ? 0.05 * u : 0), 0.22 + u * (cintura(xp) - 0.24), lado * meia(xp) * 1.0], 8), false);
+    for (const xm of [0.22, -0.82]) tracar([[xm, cintura(xm) - 0.1, lado * meia(xm) * 1.01], [xm - 0.16, cintura(xm) - 0.1, lado * meia(xm) * 1.01]], false);
+    // retrovisores
+    const rx = 0.82, ry = cintura(0.82) + 0.1, rz = lado * (meia(0.82) + 0.15);
+    tracar([[rx, ry - 0.06, lado * meia(rx) * 0.95], [rx - 0.05, ry, rz], [rx - 0.2, ry, rz], [rx - 0.2, ry - 0.08, rz], [rx - 0.05, ry - 0.08, rz], [rx - 0.05, ry, rz]], false);
+    tracar([[rx - 0.05, ry - 0.08, rz], [rx - 0.02, ry - 0.06, lado * meia(rx) * 0.95]], false);
+    // farol afilado, com a linha de LED em L
+    tracar([[2.335, 0.64, lado * 0.33], [2.2, 0.68, lado * 0.76], [2.16, 0.76, lado * 0.8], [2.335, 0.745, lado * 0.33], [2.335, 0.64, lado * 0.33]], false);
+    tracar([[2.33, 0.715, lado * 0.38], [2.27, 0.73, lado * 0.62], [2.25, 0.69, lado * 0.66]], false);
+    tracar([[2.31, 0.68, lado * 0.44], [2.28, 0.68, lado * 0.58]], false);
+    // entradas de ar laterais do para-choque
+    tracar([[2.3, 0.25, lado * 0.62], [2.27, 0.46, lado * 0.66], [2.2, 0.46, lado * 0.8], [2.22, 0.25, lado * 0.78], [2.3, 0.25, lado * 0.62]], false);
+    // lanternas traseiras em L, contornando a lateral
+    tracar([[-2.33, 0.92, lado * 0.42], [-2.33, 0.92, lado * 0.82], [-2.2, 0.93, lado * 0.88], [-2.15, 0.84, lado * 0.9], [-2.31, 0.83, lado * 0.8], [-2.34, 0.85, lado * 0.42], [-2.33, 0.92, lado * 0.42]], false);
+    tracar([[-2.335, 0.885, lado * 0.5], [-2.32, 0.885, lado * 0.78], [-2.2, 0.885, lado * 0.86]], false);
+    // ponteiras de escapamento
+    tracar(circulo(0.05, 0, 14, "x").map(([, a, b]) => [-2.36, 0.26 + a, lado * 0.55 + b]), false);
+    // rodas: pneu, aro, disco de freio e cinco raios duplos
+    for (const e of EIXOS) {
+      const zf = lado * (meia(e) - 0.02), zi = lado * (meia(e) - 0.24);
+      const roda = (r, z, n = 32) => curva((u) => [e + Math.cos(u * Math.PI * 2) * r, CENTRO_RODA + Math.sin(u * Math.PI * 2) * r, z], n);
+      tracar(roda(0.34, zf), false);
+      tracar(roda(0.34, zi), false);
+      tracar(roda(0.25, zf * 1.005), false);
+      tracar(roda(0.18, (zf + zi) / 2, 24), false);
+      tracar(roda(0.05, zf * 1.01, 12), false);
+      for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; tracar([[e + Math.cos(a) * 0.34, CENTRO_RODA + Math.sin(a) * 0.34, zf], [e + Math.cos(a) * 0.34, CENTRO_RODA + Math.sin(a) * 0.34, zi]], false); }
+      for (let i = 0; i < 5; i++) for (const d of [-0.09, 0.09]) {
+        const a = (i / 5) * Math.PI * 2 + d;
+        tracar([[e + Math.cos(a - d * 0.4) * 0.06, CENTRO_RODA + Math.sin(a - d * 0.4) * 0.06, zf * 1.01], [e + Math.cos(a) * 0.245, CENTRO_RODA + Math.sin(a) * 0.245, zf * 1.005]], false);
+      }
+    }
+  }
+
+  // costelas transversais: dão o volume da carroceria
+  for (const x of [2.34, 2.2, 1.95, 1.7, 1.15, 0.95, 0.6, 0.25, -0.1, -0.45, -0.8, -1.1, -1.35, -1.65, -2.0, -2.2, -2.34]) {
+    const w = meia(x), c = cintura(x);
+    const lateral = [[0.2, w * 0.96], [0.44, w], [Math.min(0.8, c - 0.05), w], [c, w * 0.95]];
+    const topo = naCabine(x)
+      ? [[teto(x) - 0.02, 0.62], [teto(x) + 0.015, 0]]
+      : [[c + 0.02, w * 0.55], [c + 0.035, 0]];
+    const metade = [...lateral, ...topo];
+    const secao = [...metade.map(([y, z]) => [x, y, z]), ...metade.slice(0, -1).reverse().map(([y, z]) => [x, y, -z])];
+    tracar(secao);
+  }
+  // linhas centrais: capô, teto e porta-malas
+  tracar(xs(2.3, 0.95).map((x) => [x, cintura(x) + 0.035, 0]), false);
+  tracar(xs(0.95, -1.35).map((x) => [x, teto(x) + 0.015, 0]), false);
+  tracar(xs(-1.35, -2.3).map((x) => [x, cintura(x) + 0.035, 0]), false);
+  // para-brisa e vigia traseira (bordas)
+  tracar([[0.95, cintura(0.95), 0.84], [0.95, cintura(0.95), -0.84]], false);
+  tracar([[-1.35, cintura(-1.35) + 0.01, 0.82], [-1.35, cintura(-1.35) + 0.01, -0.82]], false);
+
+  // frente: grade dupla com aletas verticais, entrada de ar inferior e placa
+  const frente = (y) => 2.35 - 0.06 * Math.max(0, (y - 0.45) / 0.3);
+  for (const lado of [1, -1]) {
+    const z0 = 0.04, z1 = 0.28, y0 = 0.46, y1 = 0.7, r = 0.05;
+    const contorno = [];
+    for (let i = 0; i <= 40; i++) {
+      const u = i / 40;
+      // retângulo de cantos arredondados percorrido em volta
+      const per = u * 4;
+      let zz, yy;
+      if (per < 1) { zz = z0 + r + (z1 - z0 - 2 * r) * per; yy = y1; }
+      else if (per < 2) { zz = z1; yy = y1 - r - (y1 - y0 - 2 * r) * (per - 1); }
+      else if (per < 3) { zz = z1 - r - (z1 - z0 - 2 * r) * (per - 2); yy = y0; }
+      else { zz = z0; yy = y0 + r + (y1 - y0 - 2 * r) * (per - 3); }
+      contorno.push([frente(yy) + 0.01, yy, lado * zz]);
+    }
+    tracar(contorno, false);
+    for (let k = 1; k <= 6; k++) { const zz = z0 + ((z1 - z0) * k) / 7; tracar([[frente(y1 - 0.02) + 0.01, y1 - 0.02, lado * zz], [frente(y0 + 0.02) + 0.01, y0 + 0.02, lado * zz]], false); }
+  }
+  tracar([[2.36, 0.22, 0.55], [2.36, 0.22, -0.55], [2.34, 0.4, -0.5], [2.34, 0.4, 0.5], [2.36, 0.22, 0.55]], false);
+  for (const y of [0.27, 0.32, 0.36]) tracar([[2.355, y, 0.52], [2.355, y, -0.52]], false);
+  tracar([[2.37, 0.4, 0.26], [2.37, 0.4, -0.26], [2.365, 0.47, -0.26], [2.365, 0.47, 0.26], [2.37, 0.4, 0.26]], false);
+  // emblema genérico (só um círculo, sem logotipo) e traseira
+  tracar(circulo(0.04, 0, 16, "x").map(([, a, b]) => [2.3, cintura(2.3) + 0.06 + a, b]), false);
+  tracar([[-2.36, 0.4, 0.26], [-2.36, 0.4, -0.26], [-2.35, 0.5, -0.26], [-2.35, 0.5, 0.26], [-2.36, 0.4, 0.26]], false);
+  tracar([[-2.34, 0.2, 0.7], [-2.34, 0.2, -0.7]], false);
+  for (const zz of [-0.3, -0.1, 0.1, 0.3]) tracar([[-2.34, 0.2, zz], [-2.3, 0.14, zz]], false);
+  return { linhas };
+}
+
+Object.assign(FORMAS, { sedan: { nome: "SEDÃ ESPORTIVO", fazer: sedanEsportivo } });
+FALA_FORMA.sedan = "o seu sedã esportivo";
+PALAVRAS_HOLO.unshift([/bmw|\bm3\b|serie 3|330|320|meu carro|carro do pedro|seda|sedan/, "sedan"]);
+ASSUNTOS_HOLO.unshift([/bmw|meu carro|sedan|seda esportivo/, "sedan"]);
+
+// ---------- lote 2 de hologramas ----------
+
+// Torno: gira um perfil [raio, altura] em volta do eixo vertical.
+function torno(perfil, meridianos = 16, passos = 36) {
+  const linhas = [];
+  for (const [r, y] of perfil) if (r > 0.01) linhas.push(circulo(r, y, passos));
+  for (let i = 0; i < meridianos; i++) {
+    const a = (i / meridianos) * Math.PI * 2;
+    linhas.push(perfil.map(([r, y]) => [Math.cos(a) * r, y, Math.sin(a) * r]));
+  }
+  return linhas;
+}
+function perfilDe(f, n = 14) {
+  const pts = [];
+  for (let i = 0; i <= n; i++) { const u = i / n; pts.push(f(u)); }
+  return pts;
+}
+
+Object.assign(FORMAS, {
+  vaso: { nome: "VASO", fazer: () => ({ linhas: torno(perfilDe((u) => [0.35 + 0.35 * Math.sin(u * Math.PI * 1.1) - 0.1 * u, -1 + u * 2])) }) },
+  taca: { nome: "TAÇA", fazer: () => ({ linhas: torno([[0.45, -1], [0.05, -0.95], [0.05, -0.1], [0.12, 0], [0.4, 0.3], [0.5, 0.7], [0.48, 1]]) }) },
+  garrafa: { nome: "GARRAFA", fazer: () => ({ linhas: torno([[0.4, -1.1], [0.42, -0.9], [0.42, 0.25], [0.3, 0.55], [0.14, 0.75], [0.13, 1.1], [0.15, 1.15]]) }) },
+  sino: { nome: "SINO", fazer: () => ({ linhas: [...torno(perfilDe((u) => [0.15 + 0.85 * Math.pow(u, 2.2), 0.9 - u * 1.7])), ...mover(esferaLinhas(0.12, 4, 6), 0, -0.9, 0)] }) },
+  peao: { nome: "PEÃO DE XADREZ", fazer: () => ({ linhas: [...torno([[0.55, -1], [0.55, -0.85], [0.4, -0.75], [0.22, -0.2], [0.35, -0.1], [0.18, 0.05]]), ...mover(esferaLinhas(0.32, 6, 8), 0, 0.35, 0)] }) },
+  rei: { nome: "REI DE XADREZ", fazer: () => ({ linhas: [...torno([[0.55, -1.1], [0.55, -0.95], [0.38, -0.85], [0.22, 0.2], [0.38, 0.3], [0.3, 0.45], [0.38, 0.7], [0.1, 0.8]]), [[0, 0.8, 0], [0, 1.2, 0]], [[-0.15, 1.05, 0], [0.15, 1.05, 0]]] }) },
+  rainha: {
+    nome: "RAINHA DE XADREZ",
+    fazer: () => {
+      const linhas = torno([[0.55, -1.1], [0.55, -0.95], [0.38, -0.85], [0.2, 0.2], [0.36, 0.3], [0.28, 0.45], [0.42, 0.8]]);
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; linhas.push(...mover(esferaLinhas(0.06, 3, 4), Math.cos(a) * 0.42, 0.88, Math.sin(a) * 0.42)); }
+      linhas.push(...mover(esferaLinhas(0.1, 4, 4), 0, 1.0, 0));
+      return { linhas };
+    },
+  },
+  torre: {
+    nome: "TORRE DE XADREZ",
+    fazer: () => {
+      const linhas = torno([[0.55, -1.1], [0.55, -0.95], [0.4, -0.85], [0.3, 0.4], [0.45, 0.5], [0.45, 0.85]], 12);
+      for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; linhas.push(...caixa(Math.cos(a) * 0.38, 0.95, Math.sin(a) * 0.38, 0.16, 0.2, 0.16)); }
+      return { linhas };
+    },
+  },
+  ovo: { nome: "OVO", fazer: () => ({ linhas: torno(perfilDe((u) => { const a = u * Math.PI; return [Math.sin(a) * 0.62 * (1 - 0.15 * Math.cos(a)), -Math.cos(a) * 0.85]; }, 18), 14) }) },
+  maca: {
+    nome: "MAÇÃ",
+    fazer: () => ({
+      linhas: [...torno(perfilDe((u) => { const a = u * Math.PI; return [Math.sin(a) * 0.85 * (1 + 0.1 * Math.sin(a)), -Math.cos(a) * 0.75 + 0.15 * Math.sin(a * 2) * (u > 0.5 ? 1 : -0.4)]; }, 18), 14),
+        [[0, 0.75, 0], [0.05, 1.05, 0]], curva((u) => [0.05 + u * 0.4, 0.95 + Math.sin(u * Math.PI) * 0.15, 0], 12), curva((u) => [0.05 + u * 0.4, 0.95 - Math.sin(u * Math.PI) * 0.02, 0], 12)],
+    }),
+  },
+  cogumelo: { nome: "COGUMELO", fazer: () => ({ linhas: [...torno(perfilDe((u) => [Math.sin(u * Math.PI * 0.5) * 0.95, 0.9 - u * u * 0.6], 10)), circulo(0.95, 0.25, 40), ...cilindro(0.25, -1, 0.25, 20, 8, 3)] }) },
+  sorvete: { nome: "SORVETE", fazer: () => ({ linhas: [...cone(0.4, 0.1, -1.15, 24, 10), ...mover(esferaLinhas(0.42, 6, 8), 0, 0.42, 0), ...mover(esferaLinhas(0.32, 5, 8), 0, 0.92, 0)] }) },
+  balao: {
+    nome: "BALÃO DE AR QUENTE",
+    fazer: () => {
+      const linhas = torno(perfilDe((u) => { const a = u * Math.PI; return [Math.sin(a) * 0.75 * (u < 0.5 ? 1 : 1 - (u - 0.5) * 1.2), 1.15 - u * 1.6]; }, 16), 12);
+      linhas.push(...caixa(0, -0.95, 0, 0.35, 0.22, 0.35));
+      for (const [x, z] of [[0.17, 0.17], [-0.17, 0.17], [0.17, -0.17], [-0.17, -0.17]]) linhas.push([[x, -0.84, z], [x * 1.6, -0.42, z * 1.6]]);
+      return { linhas };
+    },
+  },
+  farol: {
+    nome: "FAROL",
+    fazer: () => ({ linhas: [...torno([[0.45, -1.1], [0.3, 0.5], [0.42, 0.55], [0.42, 0.6], [0.25, 0.6], [0.25, 0.85], [0.3, 0.88], [0.0, 1.15]], 10), circulo(0.36, -0.6, 24), circulo(0.33, -0.1, 24), circulo(0.31, 0.3, 24)] }),
+    // feixe girando
+    dinamico: (t) => { const a = t / 600; return [[[0, 0.72, 0], [Math.cos(a) * 1.4, 0.82, Math.sin(a) * 1.4]], [[0, 0.72, 0], [Math.cos(a) * 1.4, 0.62, Math.sin(a) * 1.4]], [[Math.cos(a) * 1.4, 0.82, Math.sin(a) * 1.4], [Math.cos(a) * 1.4, 0.62, Math.sin(a) * 1.4]]]; },
+  },
+  piao: {
+    nome: "PIÃO",
+    fazer: () => ({}),
+    dinamico: (t) => girarTudo(torno([[0, -1], [0.5, -0.1], [0.62, 0.1], [0.5, 0.3], [0.1, 0.35], [0.06, 0.8]], 10), 0.15 * Math.sin(t / 900), t / 150, 0.15 * Math.cos(t / 900)),
+  },
+  vulcao: {
+    nome: "VULCÃO",
+    fazer: () => ({ linhas: torno(perfilDe((u) => [0.95 - u * 0.72 + 0.06 * Math.sin(u * 20), -0.9 + Math.pow(u, 0.8) * 1.1], 12), 18) }),
+    dinamico: (t) => { const linhas = []; for (let i = 0; i < 6; i++) { const fase = ((t / 1400 + i / 6) % 1); const a = i * 1.1; linhas.push(curva((u) => [Math.cos(a) * u * 0.4 * fase, 0.45 + fase * 0.9 * u, Math.sin(a) * u * 0.4 * fase], 8)); } return linhas; },
+  },
+  haltere: { nome: "HALTERE", fazer: () => ({ linhas: [...girarTudo(cilindro(0.06, -1.1, 1.1, 10, 4), 0, 0, Math.PI / 2), ...[-0.9, -0.75, 0.75, 0.9].flatMap((x) => girarTudo(cilindro(0.45, -0.06, 0.06, 28, 10), 0, 0, Math.PI / 2).map((l) => l.map(([a, b, c]) => [a + x, b, c])))] }) },
+  basquete: {
+    nome: "BOLA DE BASQUETE",
+    fazer: () => ({ linhas: [circulo(1, 0, 60), circulo(1, 0, 60, "z"), circulo(1, 0, 60, "x"), curva((u) => { const a = u * Math.PI * 2; return [Math.cos(a) * 0.7, Math.sin(a) * 0.7, 0.71]; }, 40), curva((u) => { const a = u * Math.PI * 2; return [Math.cos(a) * 0.7, Math.sin(a) * 0.7, -0.71]; }, 40)] }),
+  },
+  tenis: {
+    nome: "BOLA DE TÊNIS",
+    fazer: () => ({ linhas: [...esferaLinhas(0.9, 6, 8), curva((u) => { const a = u * Math.PI * 2; return [Math.cos(a) * 0.9 * Math.cos(0.5 * Math.sin(2 * a)), 0.9 * Math.sin(0.5 * Math.sin(2 * a)), Math.sin(a) * 0.9 * Math.cos(0.5 * Math.sin(2 * a))]; }, 120)] }),
+  },
+  sistemasolar: {
+    nome: "SISTEMA SOLAR",
+    fazer: () => ({ linhas: [...esferaLinhas(0.22, 5, 8), ...[0.38, 0.55, 0.74, 0.95, 1.18, 1.38].map((r) => circulo(r, 0, 60))] }),
+    // planetas andando nas órbitas
+    dinamico: (t) => [0.38, 0.55, 0.74, 0.95, 1.18, 1.38].flatMap((r, i) => { const a = t / (400 * Math.pow(r, 1.5) * 3) + i * 1.7; return mover(esferaLinhas(0.04 + (i % 3) * 0.025, 3, 4), Math.cos(a) * r, 0, Math.sin(a) * r); }),
+  },
+  turbina: {
+    nome: "TURBINA EÓLICA",
+    fazer: () => ({ linhas: [...torno([[0.09, -1.2], [0.04, 0.6]], 6, 12), ...caixa(0, 0.65, 0.05, 0.12, 0.12, 0.3)] }),
+    dinamico: (t) => [0, 1, 2].map((i) => { const a = t / 500 + (i * Math.PI * 2) / 3; return [[0, 0.65, 0.22], [Math.cos(a) * 0.95, 0.65 + Math.sin(a) * 0.95, 0.22], [Math.cos(a + 0.08) * 0.3, 0.65 + Math.sin(a + 0.08) * 0.3, 0.22]]; }),
+  },
+  rodagigante: {
+    nome: "RODA-GIGANTE",
+    fazer: () => ({ linhas: [[[0, 0, 0.15], [-0.6, -1.1, 0.15]], [[0, 0, 0.15], [0.6, -1.1, 0.15]], [[0, 0, -0.15], [-0.6, -1.1, -0.15]], [[0, 0, -0.15], [0.6, -1.1, -0.15]]] }),
+    dinamico: (t) => {
+      const linhas = [circulo(1, 0.12, 60, "z"), circulo(1, -0.12, 60, "z")];
+      for (let i = 0; i < 10; i++) {
+        const a = t / 2500 + (i / 10) * Math.PI * 2, x = Math.cos(a), y = Math.sin(a);
+        linhas.push([[0, 0, 0], [x, y, 0.12]], [[0, 0, 0], [x, y, -0.12]]);
+        linhas.push(...caixa(x, y - 0.12, 0, 0.12, 0.12, 0.2));
+      }
+      return linhas;
+    },
+  },
+  helicoptero: {
+    nome: "HELICÓPTERO",
+    fazer: () => ({ linhas: [...escalar(esferaLinhas(1, 6, 8), 0.4).map((l) => l.map(([x, y, z]) => [x * 1.6, y, z])), [[-0.55, 0.05, 0], [-1.4, 0.15, 0]], [[-0.55, -0.1, 0], [-1.4, 0.1, 0]], [[-1.4, 0.1, 0], [-1.45, 0.4, 0]], [[0, 0.4, 0], [0, 0.55, 0]], [[-0.3, -0.45, 0.3], [0.5, -0.45, 0.3]], [[-0.3, -0.45, -0.3], [0.5, -0.45, -0.3]], [[0, -0.3, 0.25], [0, -0.45, 0.3]], [[0, -0.3, -0.25], [0, -0.45, -0.3]]] }),
+    dinamico: (t) => { const a = t / 60; return [[[Math.cos(a) * 1.3, 0.55, Math.sin(a) * 1.3], [-Math.cos(a) * 1.3, 0.55, -Math.sin(a) * 1.3]], [[Math.cos(a + 1.57) * 1.3, 0.55, Math.sin(a + 1.57) * 1.3], [-Math.cos(a + 1.57) * 1.3, 0.55, -Math.sin(a + 1.57) * 1.3]], [[-1.45, 0.4 + Math.sin(a * 1.5) * 0.25, 0.02], [-1.45, 0.4 - Math.sin(a * 1.5) * 0.25, 0.02]]]; },
+  },
+  moto: {
+    nome: "MOTO",
+    fazer: () => {
+      const linhas = [];
+      for (const x of [-0.75, 0.75]) { linhas.push(circulo(0.38, 0, 36, "z").map(([a, b]) => [a + x, b - 0.5, 0]), circulo(0.27, 0, 30, "z").map(([a, b]) => [a + x, b - 0.5, 0])); }
+      linhas.push([[-0.75, -0.5, 0], [-0.2, -0.3, 0], [0.35, 0.15, 0], [0.75, -0.5, 0]], [[-0.2, -0.3, 0], [-0.55, 0.05, 0], [0.1, 0.12, 0], [0.35, 0.15, 0]], [[0.35, 0.15, 0], [0.45, 0.4, 0]], [[0.45, 0.4, -0.35], [0.45, 0.4, 0.35]]);
+      linhas.push(...caixa(-0.05, -0.12, 0, 0.45, 0.25, 0.28), ...caixa(-0.5, 0.12, 0, 0.5, 0.08, 0.25));
+      return { linhas };
+    },
+  },
+  caminhao: {
+    nome: "CAMINHÃO",
+    fazer: () => {
+      const linhas = [...caixa(-0.35, 0.05, 0, 1.6, 0.95, 0.85), ...caixa(0.85, -0.12, 0, 0.6, 0.62, 0.8), [[1.15, 0.05, 0.4], [1.15, 0.05, -0.4]], [[0.6, 0.05, 0.4], [1.0, 0.05, 0.4], [1.12, -0.05, 0.4]]];
+      for (const x of [-0.9, -0.5, 0.85]) for (const z of [0.43, -0.43]) linhas.push(circulo(0.2, z, 22, "z").map(([a, b, c]) => [a + x, b - 0.5, c]));
+      return { linhas };
+    },
+  },
+  onibus: {
+    nome: "ÔNIBUS",
+    fazer: () => {
+      const linhas = caixa(0, 0, 0, 2.3, 0.85, 0.75);
+      for (let i = 0; i < 6; i++) { const x = -0.95 + i * 0.36; for (const z of [0.375, -0.375]) linhas.push([[x, 0.05, z], [x + 0.28, 0.05, z], [x + 0.28, 0.32, z], [x, 0.32, z], [x, 0.05, z]]); }
+      linhas.push([[1.15, 0, 0.3], [1.15, 0.35, 0.3], [1.15, 0.35, -0.3], [1.15, 0, -0.3], [1.15, 0, 0.3]]);
+      for (const x of [-0.75, 0.75]) for (const z of [0.38, -0.38]) linhas.push(circulo(0.18, z, 20, "z").map(([a, b, c]) => [a + x, b - 0.45, c]));
+      return { linhas };
+    },
+  },
+  trem: {
+    nome: "TREM",
+    fazer: () => {
+      const linhas = [[[-1.4, -0.62, 0.25], [1.4, -0.62, 0.25]], [[-1.4, -0.62, -0.25], [1.4, -0.62, -0.25]]];
+      for (let x = -1.35; x <= 1.35; x += 0.18) linhas.push([[x, -0.64, 0.35], [x, -0.64, -0.35]]);
+      linhas.push(...girarTudo(cilindro(0.25, -0.2, 0.7, 20, 6, 3), 0, 0, -Math.PI / 2).map((l) => l.map(([a, b, c]) => [a + 0.3, b - 0.15, c])));
+      linhas.push(...caixa(0.1, -0.05, 0, 0.4, 0.55, 0.5), ...cilindro(0.07, 0.1, 0.4, 10, 4).map((l) => l.map(([a, b, c]) => [a + 0.8, b, c])), ...caixa(-0.8, -0.2, 0, 0.8, 0.5, 0.5));
+      for (const x of [-1.05, -0.55, 0.25, 0.75]) for (const z of [0.26, -0.26]) linhas.push(circulo(0.13, z, 16, "z").map(([a, b, c]) => [a + x, b - 0.5, c]));
+      return { linhas };
+    },
+  },
+  submarino: {
+    nome: "SUBMARINO",
+    fazer: () => ({ linhas: [...escalar(esferaLinhas(1, 7, 10), 1).map((l) => l.map(([x, y, z]) => [x * 1.3, y * 0.35, z * 0.35])), ...caixa(0.15, 0.48, 0, 0.45, 0.3, 0.16), [[0.25, 0.63, 0], [0.25, 0.9, 0], [0.4, 0.9, 0]]] }),
+    dinamico: (t) => { const a = t / 120; return [0, 1, 2, 3].map((i) => [[-1.3, 0, 0], [-1.35, Math.cos(a + i * 1.57) * 0.22, Math.sin(a + i * 1.57) * 0.22]]); },
+  },
+  estacao: {
+    nome: "ESTAÇÃO ESPACIAL",
+    fazer: () => {
+      const linhas = [...girarTudo(cilindro(0.04, -1.3, 1.3, 8, 4), 0, 0, Math.PI / 2), ...girarTudo(cilindro(0.18, -0.55, 0.55, 18, 6, 3), Math.PI / 2, 0, 0), ...girarTudo(cilindro(0.15, -0.35, 0.35, 16, 6, 3), 0, 0, Math.PI / 2)];
+      for (const x of [-1.15, -0.8, 0.8, 1.15]) for (const z of [0.5, -0.5]) {
+        linhas.push([[x - 0.14, 0, z - 0.32], [x + 0.14, 0, z - 0.32], [x + 0.14, 0, z + 0.32], [x - 0.14, 0, z + 0.32], [x - 0.14, 0, z - 0.32]]);
+        for (let k = 1; k < 4; k++) linhas.push([[x - 0.14, 0, z - 0.32 + k * 0.16], [x + 0.14, 0, z - 0.32 + k * 0.16]]);
+        linhas.push([[x, 0, 0], [x, 0, z - Math.sign(z) * 0.32]]);
+      }
+      return { linhas };
+    },
+  },
+  telescopio: { nome: "TELESCÓPIO", fazer: () => ({ linhas: [...girarTudo(cilindro(0.18, -0.9, 0.9, 20, 8, 4), 0, 0, -0.7).map((l) => l.map(([a, b, c]) => [a, b + 0.25, c])), [[0, -0.1, 0], [-0.6, -1.1, 0.4]], [[0, -0.1, 0], [0.6, -1.1, 0.4]], [[0, -0.1, 0], [0, -1.1, -0.65]]] }) },
+  chip: {
+    nome: "PROCESSADOR",
+    fazer: () => {
+      const linhas = [...caixa(0, 0, 0, 1.4, 0.12, 1.4), ...caixa(0, 0.1, 0, 0.7, 0.08, 0.7)];
+      for (let i = 0; i < 8; i++) { const c = -0.6 + i * 0.17; for (const s2 of [1, -1]) { linhas.push([[c, 0, s2 * 0.7], [c, -0.15, s2 * 0.9]], [[s2 * 0.7, 0, c], [s2 * 0.9, -0.15, c]]); } }
+      for (let i = 1; i < 4; i++) { const c = -0.35 + i * 0.175; linhas.push([[c, 0.15, -0.35], [c, 0.15, 0.35]], [[-0.35, 0.15, c], [0.35, 0.15, c]]); }
+      return { linhas };
+    },
+  },
+  wifi: {
+    nome: "WI-FI",
+    fazer: () => ({ linhas: mover(esferaLinhas(0.08, 3, 4), 0, -0.8, 0) }),
+    dinamico: (t) => [0, 1, 2, 3].map((i) => { const fase = (t / 900 + i / 4) % 1; const r = 0.25 + fase * 1.2; return curva((u) => { const a = Math.PI * 0.25 + u * Math.PI * 0.5; return [Math.cos(a) * r, -0.8 + Math.sin(a) * r, 0]; }, 20); }),
+  },
+  radar: {
+    nome: "RADAR",
+    fazer: () => ({ linhas: [circulo(1.1, 0, 60), circulo(0.75, 0, 50), circulo(0.4, 0, 40), [[-1.1, 0, 0], [1.1, 0, 0]], [[0, 0, -1.1], [0, 0, 1.1]]] }),
+    dinamico: (t) => { const a = t / 500; const linhas = []; for (let k = 0; k < 6; k++) { const b = a - k * 0.06; linhas.push([[0, 0, 0], [Math.cos(b) * 1.1, 0, Math.sin(b) * 1.1]]); } linhas.push(...mover(esferaLinhas(0.04, 3, 4), Math.cos(1.2) * 0.6, 0, Math.sin(1.2) * 0.6)); return linhas; },
+  },
+  pino: { nome: "PINO DE LOCALIZAÇÃO", fazer: () => ({ linhas: [...torno(perfilDe((u) => { const a = u * Math.PI; return u < 0.6 ? [Math.sin(a * 0.83) * 0.55, 0.2 + Math.cos(a * 0.83) * 0.55] : [0.55 * (1 - (u - 0.6) / 0.4) * 0.85, 0.2 - 0.55 * 0.5 - ((u - 0.6) / 0.4) * 0.8]; }, 16), 12), circulo(0.2, 0.3, 24, "z"), circulo(0.45, -1.1, 30), circulo(0.25, -1.1, 24)] }) },
+  cadeado: { nome: "CADEADO", fazer: () => ({ linhas: [...caixa(0, -0.35, 0, 1.1, 0.9, 0.35), curva((u) => { const a = Math.PI * u; return [Math.cos(a) * 0.38, 0.1 + Math.sin(a) * 0.55, 0]; }, 24), curva((u) => { const a = Math.PI * u; return [Math.cos(a) * 0.26, 0.1 + Math.sin(a) * 0.43, 0]; }, 24), circulo(0.08, 0.18, 14, "z").map(([a, b, c]) => [a, b - 0.4, c]), [[0, -0.48, 0.18], [0, -0.65, 0.18]]] }) },
+  chave: { nome: "CHAVE", fazer: () => ({ linhas: [circulo(0.35, 0, 30, "z").map(([a, b, c]) => [a - 0.8, b, c]), circulo(0.15, 0, 20, "z").map(([a, b, c]) => [a - 0.8, b, c]), [[-0.45, 0.06, 0], [1.1, 0.06, 0], [1.1, -0.06, 0], [-0.45, -0.06, 0]], [[0.6, -0.06, 0], [0.6, -0.3, 0], [0.75, -0.3, 0], [0.75, -0.15, 0], [0.9, -0.15, 0], [0.9, -0.35, 0], [1.05, -0.35, 0], [1.05, -0.06, 0]]] }) },
+  parafuso: {
+    nome: "PARAFUSO",
+    fazer: () => {
+      const hex = []; for (let i = 0; i <= 6; i++) { const a = (i / 6) * Math.PI * 2; hex.push([Math.cos(a) * 0.45, 0, Math.sin(a) * 0.45]); }
+      return { linhas: [mover([hex], 0, 0.75, 0)[0], mover([hex], 0, 1.0, 0)[0], ...hex.slice(0, 6).map(([x, , z]) => [[x, 0.75, z], [x, 1.0, z]]), ...cilindro(0.2, -1.1, 0.75, 16, 4), curva((u) => { const a = u * Math.PI * 22; return [Math.cos(a) * 0.24, -1.05 + u * 1.75, Math.sin(a) * 0.24]; }, 400)] };
+    },
+  },
+  martelo: { nome: "MARTELO", fazer: () => ({ linhas: [...cilindro(0.07, -1.1, 0.55, 10, 4), ...caixa(0.1, 0.7, 0, 0.9, 0.28, 0.28), [[-0.35, 0.84, 0], [-0.55, 0.95, 0.1], [-0.6, 0.95, -0.1], [-0.35, 0.56, 0]]] }) },
+  fone: { nome: "FONE DE OUVIDO", fazer: () => ({ linhas: [curva((u) => { const a = Math.PI * u; return [Math.cos(a) * 0.75, 0.1 + Math.sin(a) * 0.85, 0]; }, 30), curva((u) => { const a = Math.PI * u; return [Math.cos(a) * 0.68, 0.1 + Math.sin(a) * 0.78, 0]; }, 30), ...[-0.78, 0.78].flatMap((x) => girarTudo(cilindro(0.3, -0.12, 0.12, 24, 8, 3), 0, 0, Math.PI / 2).map((l) => l.map(([a, b, c]) => [a + x, b - 0.05, c])))] }) },
+  controle: {
+    nome: "CONTROLE DE VIDEOGAME",
+    fazer: () => {
+      const corpo = curva((u) => { const a = u * Math.PI * 2; const r = 0.75 + 0.18 * Math.cos(2 * a) - 0.1 * Math.sin(a); return [Math.cos(a) * r * 1.3, Math.sin(a) * r * 0.55 - 0.15 * Math.pow(Math.max(0, -Math.sin(a)), 3) * Math.abs(Math.cos(a)) * 3, 0]; }, 80);
+      const linhas = [corpo, mover([corpo], 0, 0, -0.15)[0]];
+      for (const [x, y] of [[-0.35, -0.15], [0.35, -0.15]]) linhas.push(circulo(0.14, 0.05, 18, "z").map(([a, b, c]) => [a + x, b + y, c + 0.02]));
+      linhas.push([[-0.75, 0.15, 0.05], [-0.55, 0.15, 0.05]], [[-0.65, 0.05, 0.05], [-0.65, 0.25, 0.05]]);
+      for (const [x, y] of [[0.65, 0.25], [0.65, 0.05], [0.55, 0.15], [0.75, 0.15]]) linhas.push(circulo(0.045, 0.05, 10, "z").map(([a, b, c]) => [a + x, b + y, c]));
+      return { linhas };
+    },
+  },
+  guitarra: {
+    nome: "GUITARRA",
+    fazer: () => {
+      const corpo = curva((u) => { const a = u * Math.PI * 2; const r = 0.5 + 0.12 * Math.cos(2 * a) + 0.08 * Math.cos(a); return [Math.cos(a) * r * 0.9 - 0.55, Math.sin(a) * r * (Math.cos(a) > 0 ? 0.85 : 1.05), 0]; }, 80);
+      const linhas = [corpo, mover([corpo], 0, 0, -0.12)[0], [[-0.1, 0.06, 0.02], [1.15, 0.05, 0.02], [1.15, -0.05, 0.02], [-0.1, -0.06, 0.02]], [[1.15, 0.07, 0.02], [1.45, 0.12, 0.02], [1.45, -0.12, 0.02], [1.15, -0.07, 0.02]]];
+      for (let i = 0; i < 6; i++) { const y = -0.04 + i * 0.016; linhas.push([[-0.85, y, 0.04], [1.4, y * 1.6, 0.04]]); }
+      for (let k = 1; k < 10; k++) { const x = 1.15 - k * 0.12; linhas.push([[x, 0.06, 0.03], [x, -0.06, 0.03]]); }
+      linhas.push(...caixa(-0.75, 0, 0.03, 0.08, 0.3, 0.02), ...caixa(-0.45, 0, 0.03, 0.08, 0.3, 0.02));
+      return { linhas };
+    },
+  },
+  teclado: {
+    nome: "TECLADO MUSICAL",
+    fazer: () => {
+      const linhas = caixa(0, -0.1, 0, 2.2, 0.15, 0.7);
+      for (let i = 0; i <= 14; i++) { const x = -1.05 + i * 0.15; linhas.push([[x, -0.02, 0.32], [x, -0.02, -0.1]]); }
+      // teclas pretas entre as brancas, menos entre mi-fá e si-dó
+      for (let i = 0; i < 13; i++) if (i % 7 !== 2 && i % 7 !== 6) linhas.push(...caixa(-1.05 + (i + 1) * 0.15, 0.03, 0.0, 0.08, 0.06, 0.2));
+      return { linhas };
+    },
+  },
+  camera: { nome: "CÂMERA FOTOGRÁFICA", fazer: () => ({ linhas: [...caixa(0, 0, 0, 1.5, 0.9, 0.5), ...caixa(-0.4, 0.55, 0, 0.4, 0.2, 0.35), ...girarTudo(cilindro(0.32, 0.25, 0.65, 28, 10, 4), Math.PI / 2, 0, 0).map((l) => l.map(([a, b, c]) => [a + 0.15, b, c])), circulo(0.2, 0.66, 24, "z").map(([a, b, c]) => [a + 0.15, b, c]), ...caixa(0.55, 0.5, 0, 0.15, 0.1, 0.15)] }) },
+  oculos: { nome: "ÓCULOS", fazer: () => { const lente = (x) => curva((u) => { const a = u * Math.PI * 2; return [x + Math.cos(a) * 0.42, Math.sin(a) * 0.3, 0]; }, 40); return { linhas: [lente(-0.5), lente(0.5), curva((u) => [-0.08 + u * 0.16, 0.08 + Math.sin(u * Math.PI) * 0.06, 0], 10), [[-0.92, 0.1, 0], [-0.98, 0.1, -1.0], [-0.98, -0.1, -1.15]], [[0.92, 0.1, 0], [0.98, 0.1, -1.0], [0.98, -0.1, -1.15]]] }; } },
+  chapeu: { nome: "CHAPÉU", fazer: () => ({ linhas: torno([[1.1, -0.35], [1.05, -0.3], [0.55, -0.3], [0.55, 0.35], [0.45, 0.5], [0.0, 0.52]], 16) }) },
+  anel: { nome: "ANEL", fazer: () => ({ linhas: [...FORMAS.toro.fazer().linhas.map((l) => l.map(([x, y, z]) => [x * 0.9, y * 0.4, z * 0.9])), ...mover(poliedro([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]], 0.28), 0, 0.3, 0.9)].map((l) => girar(l, Math.PI / 2, 0, 0)) }) },
+  medalha: { nome: "MEDALHA", fazer: () => ({ linhas: [...girarTudo(cilindro(0.55, -0.06, 0.06, 40, 12), Math.PI / 2, 0, 0).map((l) => l.map(([a, b, c]) => [a, b - 0.4, c])), circulo(0.4, 0.07, 30, "z").map(([a, b, c]) => [a, b - 0.4, c]), FORMAS.estrela.fazer().linhas[0].map(([x, y]) => [x * 0.3, y * 0.3 - 0.4, 0.08]), [[-0.25, 0.1, 0], [-0.55, 1.1, 0], [-0.25, 1.1, 0], [0, 0.15, 0], [0.25, 1.1, 0], [0.55, 1.1, 0], [0.25, 0.1, 0]]] }) },
+  moeda: { nome: "MOEDA", fazer: () => ({ linhas: [...girarTudo(cilindro(0.85, -0.08, 0.08, 48, 24), Math.PI / 2, 0, 0), circulo(0.7, 0.09, 40, "z"), curva((u) => { const a = -Math.PI * 0.2 + u * Math.PI * 1.9; return [Math.cos(a) * 0.25 * (u < 0.5 ? 1 : -1) + 0, 0.25 - u * 0.5, 0.09]; }, 30), [[0, 0.42, 0.09], [0, -0.42, 0.09]]] }) },
+  cubomagico: {
+    nome: "CUBO MÁGICO",
+    fazer: () => {
+      const linhas = [], k = 0.85;
+      for (let i = 0; i <= 3; i++) {
+        const c = -k + (i * 2 * k) / 3;
+        for (const s2 of [-k, k]) {
+          linhas.push([[c, -k, s2], [c, k, s2]], [[-k, c, s2], [k, c, s2]]);
+          linhas.push([[s2, -k, c], [s2, k, c]], [[s2, c, -k], [s2, c, k]]);
+          linhas.push([[c, s2, -k], [c, s2, k]], [[-k, s2, c], [k, s2, c]]);
+        }
+      }
+      return { linhas };
+    },
+  },
+  alvo: { nome: "ALVO", fazer: () => ({ linhas: [...[1, 0.75, 0.5, 0.25, 0.08].map((r) => circulo(r, 0, 48, "z")), [[1.3, 0.5, 0.9], [0.05, 0.02, 0]], [[1.3, 0.5, 0.9], [1.4, 0.65, 0.95]], [[1.3, 0.5, 0.9], [1.45, 0.45, 1.0]]] }) },
+  virus: {
+    nome: "VÍRUS",
+    fazer: () => {
+      const linhas = esferaLinhas(0.6, 6, 8);
+      const pts = poliedro(V_ICOSAEDRO, 1).flat();
+      const unicos = []; for (const p of pts) if (!unicos.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 1e-6)) unicos.push(p);
+      for (const d of [...unicos, ...poliedro(V_DODECAEDRO, 1).flat().filter((p, i, a) => a.findIndex((q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 1e-6) === i)]) {
+        linhas.push([d.map((c) => c * 0.6), d.map((c) => c * 0.95)]);
+        linhas.push(...mover(esferaLinhas(0.06, 3, 4), ...d.map((c) => c * 1.0)));
+      }
+      return { linhas };
+    },
+  },
+  bacteria: {
+    nome: "BACTÉRIA",
+    fazer: () => {
+      const capsula = torno(perfilDe((u) => { const a = u * Math.PI; return [Math.sin(a) * 0.35, -Math.cos(a) * 0.35 + (u < 0.5 ? -0.55 : 0.55)]; }, 16).map(([r, y], i, arr) => [r < 0.34 && i > 2 && i < arr.length - 3 ? 0.35 : r, y]), 12).map((l) => girar(l, 0, 0, Math.PI / 2));
+      const flagelos = [0, 1, 2, 3, 4].map((i) => curva((u) => [-0.9 - u * 0.9, Math.sin(u * 12 + i) * 0.12 + (i - 2) * 0.08, Math.cos(u * 10 + i) * 0.1 + (i - 2) * 0.05], 40));
+      return { linhas: [...capsula, ...flagelos] };
+    },
+  },
+  neuronio: {
+    nome: "NEURÔNIO",
+    fazer: () => {
+      const linhas = esferaLinhas(0.25, 5, 6), r = semente(31);
+      const galho = (o, d, n, prof) => { const fim = [o[0] + d[0] * n, o[1] + d[1] * n, o[2] + d[2] * n]; linhas.push([o, fim]); if (prof > 0) for (let k = 0; k < 2; k++) { const nd = d.map((c) => c + (r() - 0.5) * 0.9); const m = Math.hypot(...nd); galho(fim, nd.map((c) => c / m), n * 0.6, prof - 1); } };
+      for (let i = 0; i < 6; i++) { const a = r() * Math.PI * 2, b = (r() - 0.3) * 1.4; galho([0, 0, 0], [Math.cos(a) * Math.cos(b), Math.sin(b), Math.sin(a) * Math.cos(b)], 0.45, 2); }
+      linhas.push(curva((u) => [u * 1.4, -0.2 - u * 0.6 + Math.sin(u * 6) * 0.05, 0], 30));
+      return { linhas };
+    },
+  },
+  floco: {
+    nome: "FLOCO DE NEVE",
+    fazer: () => {
+      const linhas = [];
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2, d = [Math.cos(a), Math.sin(a)];
+        linhas.push([[0, 0, 0], [d[0] * 1.1, d[1] * 1.1, 0]]);
+        for (const [k, l] of [[0.4, 0.25], [0.7, 0.2], [0.95, 0.12]]) for (const s2 of [1, -1]) { const b = a + s2 * 0.7; linhas.push([[d[0] * k, d[1] * k, 0], [d[0] * k + Math.cos(b) * l, d[1] * k + Math.sin(b) * l, 0]]); }
+      }
+      return { linhas };
+    },
+  },
+  nuvem: { nome: "NUVEM", fazer: () => ({ linhas: [[-0.5, 0, 0, 0.45], [0.1, 0.2, 0, 0.55], [0.6, 0, 0, 0.4], [0.05, -0.15, 0.2, 0.4]].flatMap(([x, y, z, r]) => mover(esferaLinhas(r, 5, 6), x, y + 0.2, z)) }) },
+  chuva: {
+    nome: "CHUVA",
+    fazer: () => ({ linhas: [[-0.5, 0, 0, 0.4], [0.1, 0.15, 0, 0.5], [0.6, 0, 0, 0.35]].flatMap(([x, y, z, r]) => mover(esferaLinhas(r, 4, 6), x, y + 0.55, z)) }),
+    dinamico: (t) => { const linhas = [], r = semente(7); for (let i = 0; i < 26; i++) { const x = (r() - 0.5) * 1.6, z = (r() - 0.5) * 0.8, fase = (t / 900 + r()) % 1, y = 0.1 - fase * 1.3; linhas.push([[x, y, z], [x - 0.03, y - 0.15, z]]); } return linhas; },
+  },
+  relampago: { nome: "RELÂMPAGO", fazer: () => { const raio = [[0.2, 1.1], [-0.35, 0.1], [0.05, 0.1], [-0.3, -1.1], [0.45, 0.25], [0.02, 0.25], [0.5, 1.1], [0.2, 1.1]]; return { linhas: [raio.map(([x, y]) => [x, y, 0.1]), raio.map(([x, y]) => [x, y, -0.1]), ...raio.map(([x, y]) => [[x, y, 0.1], [x, y, -0.1]])] }; } },
+  fogo: {
+    nome: "FOGO",
+    fazer: () => ({ linhas: [circulo(0.6, -0.9, 36)] }),
+    dinamico: (t) => { const linhas = []; for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; linhas.push(curva((u) => { const r = 0.55 * (1 - u) * (1 + 0.25 * Math.sin(t / 90 + i * 2 + u * 6)); return [Math.cos(a + u * 0.6) * r, -0.9 + u * (1.5 + 0.3 * Math.sin(t / 130 + i)), Math.sin(a + u * 0.6) * r]; }, 16)); } return linhas; },
+  },
+  tornado: {
+    nome: "TORNADO",
+    fazer: () => ({}),
+    dinamico: (t) => { const linhas = []; for (let k = 0; k < 4; k++) linhas.push(curva((u) => { const a = u * Math.PI * 14 + t / 200 + k * 1.57, r = 0.05 + u * u * 0.9; return [Math.cos(a) * r + Math.sin(u * 3 + t / 800) * 0.1, -1.1 + u * 2.2, Math.sin(a) * r]; }, 200)); return linhas; },
+  },
+  flor: { nome: "FLOR", fazer: () => ({ linhas: [curva((u) => { const a = u * Math.PI * 2, r = 0.6 * Math.abs(Math.cos(2.5 * a)); return [Math.cos(a) * r, 0.5, Math.sin(a) * r]; }, 200), ...mover(esferaLinhas(0.12, 4, 6), 0, 0.5, 0), curva((u) => [Math.sin(u * 3) * 0.1, 0.5 - u * 1.6, 0], 20), curva((u) => [u * 0.4, -0.5 + Math.sin(u * Math.PI) * 0.18, 0], 14), curva((u) => [u * 0.4, -0.5 - Math.sin(u * Math.PI) * 0.05, 0], 14)] }) },
+  cacto: { nome: "CACTO", fazer: () => ({ linhas: [...torno([[0.25, -1.1], [0.25, 0.7], [0.15, 0.95], [0, 1.0]], 10), ...girarTudo(cilindro(0.13, 0, 0.45, 12, 6, 2), 0, 0, Math.PI / 2).map((l) => l.map(([a, b, c]) => [a + 0.22, b - 0.1, c])), ...cilindro(0.13, -0.1, 0.45, 12, 6, 2).map((l) => l.map(([a, b, c]) => [a + 0.67, b, c])), ...torno([[0.55, -1.1], [0.45, -1.4], [0.0, -1.4]], 10)] }) },
+  palmeira: { nome: "PALMEIRA", fazer: () => { const tronco = (u) => [Math.sin(u * 1.5) * 0.35, -1.1 + u * 1.9, 0]; const linhas = [curva(tronco, 20)]; for (let k = 1; k < 10; k++) linhas.push(circulo(0.1 - k * 0.004, 0, 12).map(([a, b, c]) => { const p = tronco(k / 10); return [a + p[0], p[1], c]; })); const topo = tronco(1); for (let i = 0; i < 7; i++) { const a = (i / 7) * Math.PI * 2; linhas.push(curva((u) => [topo[0] + Math.cos(a) * u * 0.95, topo[1] + Math.sin(u * Math.PI) * 0.35 - u * u * 0.55, Math.sin(a) * u * 0.95], 16)); } return { linhas }; } },
+  pizza: { nome: "PIZZA", fazer: () => { const linhas = [circulo(1, 0, 60), circulo(1.08, -0.04, 60)]; for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; linhas.push([[0, 0.01, 0], [Math.cos(a), 0.01, Math.sin(a)]]); } const r = semente(4); for (let i = 0; i < 10; i++) { const a = r() * Math.PI * 2, d = 0.2 + r() * 0.65; linhas.push(circulo(0.1, 0.02, 14).map(([x, y, z]) => [x + Math.cos(a) * d, y, z + Math.sin(a) * d])); } return { linhas: girarTudo(linhas, 0.5, 0, 0) }; } },
+  hamburguer: { nome: "HAMBÚRGUER", fazer: () => ({ linhas: [...torno(perfilDe((u) => [Math.sin(u * Math.PI * 0.5 + 0.2) * 0.9, 0.2 + Math.cos(u * Math.PI * 0.5) * 0.55 * u], 8), 14), ...torno([[0.95, 0.05], [0.95, -0.15]], 14), curva((u) => { const a = u * Math.PI * 2; return [Math.cos(a) * (1.0 + 0.05 * Math.sin(a * 12)), 0.12, Math.sin(a) * (1.0 + 0.05 * Math.sin(a * 12))]; }, 120), ...torno([[0.9, -0.2], [0.85, -0.5], [0, -0.5]], 14)] }) },
+  bolo: {
+    nome: "BOLO DE ANIVERSÁRIO",
+    fazer: () => {
+      const linhas = [...cilindro(0.95, -1, -0.35, 40, 16, 3), ...cilindro(0.65, -0.35, 0.15, 32, 12, 3)];
+      for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; linhas.push([[Math.cos(a) * 0.4, 0.15, Math.sin(a) * 0.4], [Math.cos(a) * 0.4, 0.5, Math.sin(a) * 0.4]]); }
+      return { linhas };
+    },
+    dinamico: (t) => [0, 1, 2, 3, 4].map((i) => { const a = (i / 5) * Math.PI * 2, x = Math.cos(a) * 0.4, z = Math.sin(a) * 0.4, h = 0.1 + 0.04 * Math.sin(t / 70 + i); return curva((u) => { const b = u * Math.PI * 2; return [x + Math.sin(b) * 0.04 * Math.sin(u * Math.PI), 0.55 + (1 - Math.cos(b)) * 0.5 * h, z]; }, 12); }),
+  },
+  presente: { nome: "PRESENTE", fazer: () => ({ linhas: [...caixa(0, -0.3, 0, 1.2, 0.9, 1.2), ...caixa(0, 0.25, 0, 1.3, 0.2, 1.3), [[0, 0.35, -0.65], [0, 0.35, 0.65]], [[-0.65, 0.35, 0], [0.65, 0.35, 0]], [[0, -0.75, 0.6], [0, 0.35, 0.6]], [[0.6, -0.75, 0], [0.6, 0.35, 0]], curva((u) => { const a = u * Math.PI * 2; return [Math.cos(a) * 0.25 - 0.25, 0.5 + Math.sin(a) * 0.15, 0]; }, 24), curva((u) => { const a = u * Math.PI * 2; return [Math.cos(a) * 0.25 + 0.25, 0.5 + Math.sin(a) * 0.15, 0]; }, 24)] }) },
+  balaofesta: { nome: "BALÃO DE FESTA", fazer: () => ({ linhas: [...torno(perfilDe((u) => { const a = u * Math.PI; return [Math.sin(a) * 0.6 * (1 - 0.25 * u), 1.2 - u * 1.4]; }, 16), 12), curva((u) => [Math.sin(u * 8) * 0.06, -0.2 - u * 1.0, 0], 30)] }) },
+  pendulo: {
+    nome: "PÊNDULO DE NEWTON",
+    fazer: () => ({ linhas: [...caixa(0, -1.05, 0, 1.8, 0.08, 0.7), [[-0.85, -1.0, 0.3], [-0.85, 0.8, 0.3], [0.85, 0.8, 0.3], [0.85, -1.0, 0.3]], [[-0.85, -1.0, -0.3], [-0.85, 0.8, -0.3], [0.85, 0.8, -0.3], [0.85, -1.0, -0.3]]] }),
+    dinamico: (t) => {
+      const linhas = [], fase = Math.sin(t / 300), comp = 1.2;
+      for (let i = 0; i < 5; i++) {
+        let a = 0;
+        if (i === 0 && fase < 0) a = fase * 0.6;
+        if (i === 4 && fase > 0) a = fase * 0.6;
+        const x0 = -0.4 + i * 0.2, bx = x0 + Math.sin(a) * comp, by = 0.8 - Math.cos(a) * comp;
+        linhas.push([[x0, 0.8, 0.3], [bx, by, 0]], [[x0, 0.8, -0.3], [bx, by, 0]], ...mover(esferaLinhas(0.1, 4, 4), bx, by, 0));
+      }
+      return linhas;
+    },
+  },
+  ventilador: {
+    nome: "VENTILADOR",
+    fazer: () => ({ linhas: [...torno([[0.5, -1.1], [0.45, -1.0], [0.06, -0.95], [0.06, 0.0]], 10), ...girarTudo(cilindro(0.12, 0, 0.2, 14, 4), Math.PI / 2, 0, 0), ...[0.95, 0.7, 0.45].map((r) => circulo(r, 0.12, 40, "z")), ...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => { const a = (i / 8) * Math.PI * 2; return [[0, 0, 0.12], [Math.cos(a) * 0.95, Math.sin(a) * 0.95, 0.12]]; })] }),
+    dinamico: (t) => [0, 1, 2].map((i) => { const a = t / 70 + (i * Math.PI * 2) / 3; return curva((u) => { const b = a + Math.sin(u * Math.PI) * 0.45 * (u < 0.5 ? 1 : 1); const r = 0.12 + u * 0.75; return [Math.cos(a + u * 0.5) * r, Math.sin(a + u * 0.5) * r, 0.05]; }, 12).concat(curva((u) => { const r = 0.87 - u * 0.75; return [Math.cos(a + 0.5 - u * 0.1) * r, Math.sin(a + 0.5 - u * 0.1) * r, 0.05]; }, 10)); }),
+  },
+  capacete: { nome: "CAPACETE DE ASTRONAUTA", fazer: () => ({ linhas: [...esferaLinhas(0.95, 8, 10).filter((l) => l.some((p) => p[1] > -0.55)), curva((u) => { const a = -0.9 + u * 1.8; return [Math.sin(a) * 0.92, 0.25 + 0.3 * Math.cos(a * 1.4) - 0.3, Math.cos(a) * 0.4 + 0.45]; }, 30), ...torno([[0.75, -0.7], [0.82, -0.85], [0.95, -0.95]], 16)] }) },
+  ponte: {
+    nome: "PONTE",
+    fazer: () => {
+      const linhas = [[[-1.5, -0.3, 0.25], [1.5, -0.3, 0.25]], [[-1.5, -0.3, -0.25], [1.5, -0.3, -0.25]]];
+      for (const x of [-0.75, 0.75]) for (const z of [0.25, -0.25]) linhas.push([[x, -1.0, z], [x, 0.7, z]]);
+      for (const z of [0.25, -0.25]) {
+        linhas.push(curva((u) => { const x = -0.75 + u * 1.5; return [x, 0.7 - Math.sin(u * Math.PI) * 0.85, z]; }, 30), [[-0.75, 0.7, z], [-1.5, -0.25, z]], [[0.75, 0.7, z], [1.5, -0.25, z]]);
+        for (let x = -0.6; x <= 0.61; x += 0.15) { const u = (x + 0.75) / 1.5; linhas.push([[x, 0.7 - Math.sin(u * Math.PI) * 0.85, z], [x, -0.3, z]]); }
+      }
+      return { linhas };
+    },
+  },
+  castelo: {
+    nome: "CASTELO",
+    fazer: () => {
+      const linhas = [...caixa(0, -0.55, 0, 1.4, 0.7, 1.4)];
+      for (const [x, z] of [[0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]]) linhas.push(...cilindro(0.22, -0.9, 0.05, 16, 6, 3).map((l) => l.map(([a, b, c]) => [a + x, b, c + z])), ...cone(0.27, 0, 0.45, 16, 6).map((l) => l.map(([a, b, c]) => [a + x, b + 0.05, c + z])));
+      linhas.push(...caixa(0, 0.0, 0, 0.6, 0.5, 0.6), ...cone(0.45, 0, 0.5, 4, 4).map((l) => l.map(([a, b, c]) => [a, b + 0.25, c])), [[-0.15, -0.9, 0.7], [-0.15, -0.6, 0.7], [0, -0.5, 0.7], [0.15, -0.6, 0.7], [0.15, -0.9, 0.7]]);
+      return { linhas };
+    },
+  },
+  bandeira: {
+    nome: "BANDEIRA DO BRASIL",
+    fazer: () => ({ linhas: [[[-1.0, -1.2, 0], [-1.0, 0.8, 0]]] }),
+    // tremulando ao vento: retângulo verde, losango amarelo e círculo azul
+    dinamico: (t) => {
+      const onda = (x, y) => [x, y, Math.sin(x * 3 - t / 250) * 0.08 * (x + 1)];
+      const ponto = (u, v) => onda(-1.0 + u * 1.8, 0.8 - v * 1.26);
+      const linhas = [curva((u) => ponto(u, 0), 30), curva((u) => ponto(u, 1), 30), curva((v) => ponto(1, v), 10)];
+      linhas.push(curva((s2) => { const k = s2 * 4, i = Math.floor(k) % 4, f = k - Math.floor(k); const vs = [[0.08, 0.5], [0.5, 0.1], [0.92, 0.5], [0.5, 0.9], [0.08, 0.5]]; const a = vs[i], b = vs[i + 1]; return ponto(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f); }, 60));
+      linhas.push(curva((s2) => { const a = s2 * Math.PI * 2; return ponto(0.5 + Math.cos(a) * 0.17, 0.5 + Math.sin(a) * 0.27); }, 40));
+      linhas.push(curva((s2) => { const a = Math.PI * 0.15 + s2 * Math.PI * 0.7; return ponto(0.5 + Math.cos(a) * 0.19, 0.78 - Math.sin(a) * 0.32); }, 20));
+      return linhas;
+    },
+  },
+  coracaobatendo: {
+    nome: "CORAÇÃO BATENDO",
+    fazer: () => ({}),
+    dinamico: (t) => { const b = 1 + 0.12 * Math.pow(Math.max(0, Math.sin(t / 160)), 8) + 0.06 * Math.pow(Math.max(0, Math.sin(t / 160 - 0.6)), 8); return escalar(FORMAS.coracao.fazer().linhas, b); },
+  },
+  respiracao: {
+    nome: "RESPIRAÇÃO",
+    fazer: () => ({}),
+    // 4 s inspirando, 4 s segurando, 4 s soltando: a esfera acompanha
+    dinamico: (t) => { const c = (t / 1000) % 12; const k = c < 4 ? 0.45 + 0.55 * (c / 4) : c < 8 ? 1 : 1 - 0.55 * ((c - 8) / 4); return escalar(esferaLinhas(1, 8, 10), k); },
+  },
+});
+
+Object.assign(FALA_FORMA, {
+  vaso: "um vaso", taca: "uma taça", garrafa: "uma garrafa", sino: "um sino", peao: "um peão de xadrez", rei: "o rei do xadrez", rainha: "a rainha do xadrez", torre: "uma torre de xadrez",
+  ovo: "um ovo", maca: "uma maçã", cogumelo: "um cogumelo", sorvete: "um sorvete", balao: "um balão de ar quente", farol: "um farol", piao: "um pião", vulcao: "um vulcão",
+  haltere: "um haltere", basquete: "uma bola de basquete", tenis: "uma bola de tênis", sistemasolar: "o sistema solar", turbina: "uma turbina eólica", rodagigante: "uma roda-gigante",
+  helicoptero: "um helicóptero", moto: "uma moto", caminhao: "um caminhão", onibus: "um ônibus", trem: "um trem", submarino: "um submarino", estacao: "uma estação espacial", telescopio: "um telescópio",
+  chip: "um processador", wifi: "o sinal de wi-fi", radar: "um radar", pino: "um pino de localização", cadeado: "um cadeado", chave: "uma chave", parafuso: "um parafuso", martelo: "um martelo",
+  fone: "um fone de ouvido", controle: "um controle de videogame", guitarra: "uma guitarra", teclado: "um teclado musical", camera: "uma câmera", oculos: "um par de óculos", chapeu: "um chapéu",
+  anel: "um anel", medalha: "uma medalha", moeda: "uma moeda", cubomagico: "um cubo mágico", alvo: "um alvo", virus: "um vírus", bacteria: "uma bactéria", neuronio: "um neurônio",
+  floco: "um floco de neve", nuvem: "uma nuvem", chuva: "chuva", relampago: "um relâmpago", fogo: "fogo", tornado: "um tornado", flor: "uma flor", cacto: "um cacto", palmeira: "uma palmeira",
+  pizza: "uma pizza", hamburguer: "um hambúrguer", bolo: "um bolo de aniversário", presente: "um presente", balaofesta: "um balão", pendulo: "um pêndulo de Newton", ventilador: "um ventilador",
+  capacete: "um capacete de astronauta", ponte: "uma ponte", castelo: "um castelo", bandeira: "a bandeira do Brasil", coracaobatendo: "um coração batendo", respiracao: "o guia de respiração",
+});
+
+PALAVRAS_HOLO.unshift(
+  [/sistema solar/, "sistemasolar"], [/bandeira|brasil/, "bandeira"], [/coracao batendo|batimento/, "coracaobatendo"], [/respira|relaxa/, "respiracao"],
+  [/vaso/, "vaso"], [/taca|vinho/, "taca"], [/garrafa/, "garrafa"], [/\bsino/, "sino"], [/\bpeao\b/, "peao"], [/\brei\b/, "rei"], [/rainha/, "rainha"], [/torre de xadrez|xadrez/, "torre"],
+  [/\bovos?\b/, "ovo"], [/\bmaca\b|maca vermelha/, "maca"], [/cogumelo/, "cogumelo"], [/sorvete/, "sorvete"], [/balao de ar|ar quente/, "balao"], [/\bfarol/, "farol"], [/\bpiao\b/, "piao"], [/vulcao|lava/, "vulcao"],
+  [/haltere|academia|musculacao/, "haltere"], [/basquete/, "basquete"], [/\btenis\b/, "tenis"], [/turbina|eolica/, "turbina"], [/roda gigante|roda-gigante|parque de diversoes/, "rodagigante"],
+  [/helicoptero/, "helicoptero"], [/\bmoto\b|motocicleta/, "moto"], [/caminhao/, "caminhao"], [/onibus/, "onibus"], [/\btrem\b|ferrovia/, "trem"], [/submarino/, "submarino"], [/estacao espacial/, "estacao"], [/telescopio/, "telescopio"],
+  [/processador|\bchip\b|cpu/, "chip"], [/wi-?fi|internet|sinal/, "wifi"], [/radar/, "radar"], [/localizacao|\bgps\b|\bpino\b/, "pino"], [/cadeado/, "cadeado"], [/\bchave\b/, "chave"], [/parafuso/, "parafuso"], [/martelo|ferramenta/, "martelo"],
+  [/fone/, "fone"], [/controle|videogame|game\b|jogo\b/, "controle"], [/guitarra|violao/, "guitarra"], [/teclado|piano/, "teclado"], [/camera|foto/, "camera"], [/oculos/, "oculos"], [/chapeu/, "chapeu"],
+  [/\banel\b|alianca/, "anel"], [/medalha/, "medalha"], [/moeda/, "moeda"], [/cubo magico/, "cubomagico"], [/\balvo\b|dardo/, "alvo"], [/virus/, "virus"], [/bacteria/, "bacteria"], [/neuronio/, "neuronio"],
+  [/floco|neve/, "floco"], [/nuvem/, "nuvem"], [/chuva/, "chuva"], [/relampago|\braio\b|trovao/, "relampago"], [/\bfogo\b|fogueira|chama/, "fogo"], [/tornado|furacao/, "tornado"], [/\bflor\b|rosa\b/, "flor"], [/cacto/, "cacto"], [/palmeira|praia/, "palmeira"],
+  [/pizza/, "pizza"], [/hamburguer|lanche/, "hamburguer"], [/\bbolo\b|aniversario/, "bolo"], [/presente/, "presente"], [/balao\b|bexiga/, "balaofesta"], [/pendulo/, "pendulo"], [/ventilador/, "ventilador"],
+  [/capacete|astronauta/, "capacete"], [/\bponte\b/, "ponte"], [/castelo/, "castelo"],
+);
+ASSUNTOS_HOLO.unshift(
+  [/sistema solar/, "sistemasolar"], [/\bbrasil\b|brasileir/, "bandeira"], [/vinho/, "taca"], [/xadrez/, "rei"], [/pascoa/, "ovo"], [/sorvete/, "sorvete"], [/vulcao/, "vulcao"],
+  [/academia|musculacao|treino/, "haltere"], [/basquete|nba/, "basquete"], [/\btenis\b/, "tenis"], [/energia eolica|vento/, "turbina"], [/helicoptero/, "helicoptero"], [/\bmoto\b|motocicleta/, "moto"],
+  [/caminhao/, "caminhao"], [/onibus/, "onibus"], [/\btrem\b|metro\b/, "trem"], [/submarino/, "submarino"], [/estacao espacial/, "estacao"], [/telescopio|astronomia/, "telescopio"],
+  [/processador|hardware/, "chip"], [/wi-?fi|roteador/, "wifi"], [/videogame|playstation|xbox|nintendo|\bgames?\b/, "controle"], [/guitarra|violao/, "guitarra"], [/piano/, "teclado"], [/fotografia/, "camera"],
+  [/casamento|noivado/, "anel"], [/olimpiada|medalha/, "medalha"], [/virus|gripe|vacina/, "virus"], [/bacteria/, "bacteria"], [/neuronio/, "neuronio"], [/\bneve\b|inverno/, "floco"],
+  [/chuva|chover/, "chuva"], [/tempestade|trovao/, "relampago"], [/fogueira|incendio/, "fogo"], [/tornado|furacao/, "tornado"], [/\bflores?\b|jardim/, "flor"], [/deserto/, "cacto"], [/praia|ferias/, "palmeira"],
+  [/pizza/, "pizza"], [/hamburguer|lanche/, "hamburguer"], [/aniversario/, "bolo"], [/presente|natal/, "presente"], [/festa/, "balaofesta"], [/castelo|idade media/, "castelo"],
+);
+
 function holoDoAssunto(...textos) {
   if (!autoHolo) return false;
   for (const texto of textos) {
@@ -4908,12 +5491,182 @@ const FUNCOES = [
   "› Moedas: quanto está o dólar", "› Wikipedia: quem foi… / o que é…",
   "› Sites: abre o YouTube, TikTok, Instagram…", "› Música: toca (artista)",
   "› Hologramas: 64 formas, desfile de hologramas", "› Fica mudo / volta a falar",
-  "› Desligar / duas palmas para ligar",
+  "› Desligar / duas palmas para ligar · trava o jarvis",
+  "› Traduzir: traduz bom dia para inglês", "› Sorteios: joga um dado, cara ou coroa",
+  "› Datas: quantos dias faltam para o Natal", "› Unidades: quanto é 10 km em milhas",
+  "› Notas: anota… / lê minhas notas", "› Modo foco (25 min) · respiração guiada",
+  "› Gera uma senha · bateria · fala mais devagar",
+  "› Holograma do meu carro (sedã esportivo)",
 ];
+
+// ---------- mais funções: tradução, sorteios, datas, unidades, notas, foco, senha, bateria ----------
+
+const IDIOMAS = [[/ingles/, "en", "inglês"], [/espanhol/, "es", "espanhol"], [/frances/, "fr", "francês"], [/italiano/, "it", "italiano"], [/alemao/, "de", "alemão"], [/japones/, "ja", "japonês"], [/chines/, "zh-CN", "chinês"], [/russo/, "ru", "russo"], [/coreano/, "ko", "coreano"], [/portugues/, "pt-BR", "português"]];
+async function traduzir(texto, para) {
+  const de = para === "pt-BR" ? "en" : "pt-BR";
+  const r = await fetch("https://api.mymemory.translated.net/get?q=" + encodeURIComponent(texto) + "&langpair=" + de + "|" + para);
+  const j = await r.json();
+  const t = j && j.responseData && j.responseData.translatedText;
+  if (!t || /MYMEMORY WARNING|INVALID/i.test(t)) throw new Error("sem tradução");
+  return t;
+}
+
+const CHAVE_NOTAS = "jarvis.notas";
+let notas = lerJson(CHAVE_NOTAS);
+
+const MESES = ["janeiro", "fevereiro", "marco", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+const DATAS_FIXAS = [[/natal/, 12, 25, "o Natal"], [/ano novo|reveillon/, 1, 1, "o Ano-Novo"], [/dia dos namorados/, 6, 12, "o Dia dos Namorados"], [/dia das criancas/, 10, 12, "o Dia das Crianças"], [/independencia|7 de setembro/, 9, 7, "a Independência"], [/halloween|dia das bruxas/, 10, 31, "o Halloween"], [/finados/, 11, 2, "Finados"], [/tiradentes/, 4, 21, "Tiradentes"]];
+function proximaData(mes, dia) {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const d = new Date(hoje.getFullYear(), mes - 1, dia);
+  if (d < hoje) d.setFullYear(d.getFullYear() + 1);
+  return Math.round((d - hoje) / 86400000);
+}
+
+// unidade: [padrão, nome, tipo, fator para a unidade base]
+const UNIDADES = [
+  [/quilometros?|\bkm\b/, "quilômetros", "dist", 1000], [/\bmetros?\b|\bm\b/, "metros", "dist", 1], [/centimetros?|\bcm\b/, "centímetros", "dist", 0.01], [/milhas?/, "milhas", "dist", 1609.344], [/\bpes\b|\bpe\b/, "pés", "dist", 0.3048], [/polegadas?/, "polegadas", "dist", 0.0254],
+  [/quilos?|quilogramas?|\bkg\b/, "quilos", "massa", 1], [/\bgramas?\b|\bg\b/, "gramas", "massa", 0.001], [/libras?/, "libras", "massa", 0.45359237], [/oncas?/, "onças", "massa", 0.0283495],
+  [/\blitros?\b|\bl\b/, "litros", "vol", 1], [/mililitros?|\bml\b/, "mililitros", "vol", 0.001], [/galoes|galao/, "galões", "vol", 3.78541],
+  [/celsius|graus? c\b/, "graus Celsius", "temp", "C"], [/fahrenheit|graus? f\b/, "graus Fahrenheit", "temp", "F"], [/kelvin/, "kelvin", "temp", "K"],
+  [/km\/h|quilometros por hora/, "km por hora", "vel", 1 / 3.6], [/mph|milhas por hora/, "milhas por hora", "vel", 0.44704], [/m\/s|metros por segundo/, "metros por segundo", "vel", 1],
+];
+function acharUnidade(txt) {
+  return UNIDADES.find(([re]) => re.test(txt));
+}
+function converter(qtd, de, para) {
+  if (de[2] !== para[2]) return null;
+  if (de[2] === "temp") {
+    const c = de[3] === "C" ? qtd : de[3] === "F" ? (qtd - 32) * 5 / 9 : qtd - 273.15;
+    return para[3] === "C" ? c : para[3] === "F" ? c * 9 / 5 + 32 : c + 273.15;
+  }
+  return (qtd * de[3]) / para[3];
+}
+
+let modoFoco = null;
+let velocidadeFala = Number(ler("jarvis.velocidade", "1")) || 1;
+
+function comandoMais(t, n) {
+  let m;
+
+  // tradução: "traduz bom dia para inglês", "como se diz obrigado em japonês"
+  m = t.match(/^(?:traduz\w*|traduzir)\s+(.+?)\s+(?:para|pro|pra|em)\s+(?:o\s+)?(\S+)\s*$/i) || t.match(/^como\s+(?:se\s+)?(?:diz|fala|falo|digo)\s+(.+?)\s+em\s+(\S+)\s*$/i);
+  if (m) {
+    const idioma = IDIOMAS.find(([re]) => re.test(semAcento(m[2])));
+    if (idioma) return traduzir(m[1].replace(/^["']|["']$/g, ""), idioma[1]).then((r) => `Em ${idioma[2]}: ${r}`).catch(() => "Não consegui traduzir agora, Pedro.");
+  }
+
+  // sorteios
+  if (/joga\w*\s+(?:um\s+)?dado|rola\w*\s+(?:um\s+)?dado|^dado$/.test(n)) {
+    mostrarHolograma("dado");
+    return `Deu ${1 + Math.floor(Math.random() * 6)}.`;
+  }
+  if (/cara\s+ou\s+coroa|joga\w*\s+(?:uma\s+)?moeda/.test(n)) {
+    mostrarHolograma("moeda");
+    return Math.random() < 0.5 ? "Deu cara." : "Deu coroa.";
+  }
+  m = n.match(/sorte\w*\s+(?:um\s+)?numero\s+(?:entre|de)\s+(\d+)\s+(?:e|a|ate)\s+(\d+)/);
+  if (m) {
+    const a = Number(m[1]), b = Number(m[2]), lo = Math.min(a, b), hi = Math.max(a, b);
+    return `O número sorteado é ${lo + Math.floor(Math.random() * (hi - lo + 1))}.`;
+  }
+
+  // quantos dias faltam
+  m = n.match(/quantos\s+dias\s+(?:faltam\s+)?(?:para|pro|pra|ate)\s+(?:o\s+|a\s+|meu\s+|dia\s+)?(.+)$/);
+  if (m) {
+    const alvo = m[1];
+    const fixa = DATAS_FIXAS.find(([re]) => re.test(alvo));
+    let dias = null, nome = alvo;
+    if (fixa) { dias = proximaData(fixa[1], fixa[2]); nome = fixa[3]; }
+    else {
+      const md = alvo.match(/(\d{1,2})\s+de\s+([a-z]+)/) || alvo.match(/(\d{1,2})\/(\d{1,2})/);
+      if (md) { const mes = isNaN(md[2]) ? MESES.indexOf(md[2]) + 1 : Number(md[2]); if (mes >= 1) { dias = proximaData(mes, Number(md[1])); nome = "essa data"; } }
+      else if (/aniversario/.test(alvo)) {
+        const fato = memoria.map(semAcento).find((x) => /aniversario/.test(x));
+        const mf = fato && (fato.match(/(\d{1,2})\s+de\s+([a-z]+)/) || fato.match(/(\d{1,2})\/(\d{1,2})/));
+        if (mf) { const mes = isNaN(mf[2]) ? MESES.indexOf(mf[2]) + 1 : Number(mf[2]); dias = proximaData(mes, Number(mf[1])); nome = "o seu aniversário"; }
+        else return 'Não sei seu aniversário ainda, Pedro. Diga "lembra que meu aniversário é 10 de maio".';
+      }
+    }
+    if (dias !== null) {
+      mostrarHolograma("ampulheta");
+      return dias === 0 ? `É hoje, Pedro: ${nome}!` : `Faltam ${dias} ${dias === 1 ? "dia" : "dias"} para ${nome}.`;
+    }
+  }
+
+  // conversão de unidades: "quanto é 10 km em milhas", "30 graus celsius em fahrenheit"
+  m = n.match(/(-?\d+(?:[.,]\d+)?)\s*(.+?)\s+(?:em|para|pra)\s+(.+?)\??$/);
+  if (m && /quanto|convert|^-?\d/.test(n)) {
+    const de = acharUnidade(m[2]), para = acharUnidade(m[3]);
+    if (de && para) {
+      const v = converter(numeroFalado(m[1]), de, para);
+      if (v !== null) return `${m[1].replace(".", ",")} ${de[1]} são ${numeroBonito(Math.round(v * 100) / 100)} ${para[1]}.`;
+    }
+  }
+
+  // notas rápidas
+  m = t.match(/^(?:anota|anote|nota|escreve|escreva)(?:\s+(?:a[ií]|isso))?\s*:?\s+(?!(?:uma\s+)?tarefa)(.+)$/i);
+  if (m) {
+    notas.push({ texto: m[1].trim().slice(0, 300), quando: Date.now() });
+    gravar(CHAVE_NOTAS, JSON.stringify(notas));
+    return "Anotado, Pedro.";
+  }
+  if (/(?:le|leia|mostra|quais)\w*\s+(?:sao\s+)?(?:as\s+)?(?:minhas\s+)?notas|minhas anotacoes/.test(n)) {
+    if (!notas.length) return "Você não tem notas, Pedro.";
+    mostrarHologramaDeTexto("NOTAS", notas.slice(-10).map((x) => "› " + x.texto));
+    return `Você tem ${notas.length === 1 ? "uma nota" : notas.length + " notas"}: ` + notas.slice(-5).map((x) => x.texto).join("; ") + ".";
+  }
+  if (/(?:apag|limp|exclu)\w*\s+(?:as\s+|todas\s+as\s+)?(?:minhas\s+)?notas/.test(n)) {
+    notas = [];
+    gravar(CHAVE_NOTAS, "[]");
+    return "Notas apagadas.";
+  }
+
+  // modo foco (pomodoro de 25 minutos)
+  if (/modo\s+foco|pomodoro|me\s+ajuda\s+a\s+focar|hora\s+de\s+estudar/.test(n)) {
+    if (modoFoco) clearTimeout(relogiosLembrete.get(modoFoco.id));
+    modoFoco = criarLembrete(Date.now() + 25 * 60000, "fim do modo foco, hora de uma pausa de 5 minutos");
+    mostrarHolograma("ampulheta");
+    return "Modo foco ligado: 25 minutos. Eu aviso quando acabar. Bom trabalho, Pedro.";
+  }
+
+  // respiração guiada
+  if (/respira\w*|me\s+ajuda\s+a\s+relaxar|estou\s+(?:nervoso|ansioso|estressado)|ansiedade/.test(n) && !/holograma/.test(n)) {
+    mostrarHolograma("respiracao");
+    holo.ate = performance.now() + 60000;
+    return "Vamos respirar juntos, Pedro. Acompanhe a esfera: inspire em quatro, segure em quatro e solte em quatro.";
+  }
+
+  // senha forte
+  if (/(?:gera|cria|inventa)\w*\s+(?:uma\s+)?senha/.test(n)) {
+    const letras = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*?";
+    const bytes = new Uint32Array(16);
+    crypto.getRandomValues(bytes);
+    const senha = Array.from(bytes, (b) => letras[b % letras.length]).join("");
+    mostrarHologramaDeTexto("SENHA GERADA", ["› " + senha, "› 16 caracteres, só aparece aqui"]);
+    setTimeout(() => { const el = $("legenda"); const d = document.createElement("div"); d.className = "voce"; d.textContent = "Senha: " + senha; el.appendChild(d); }, 50);
+    return "Gerei uma senha forte de 16 caracteres. Ela está na tela, não vou ler em voz alta.";
+  }
+
+  // bateria do computador
+  if (/bateria/.test(n)) {
+    if (!navigator.getBattery) return "Este navegador não informa a bateria, Pedro.";
+    return navigator.getBattery().then((b) => `A bateria está em ${Math.round(b.level * 100)}%${b.charging ? ", carregando" : ""}.`).catch(() => "Não consegui ler a bateria.");
+  }
+
+  // velocidade da fala
+  if (/fala\w*\s+mais\s+(?:rapido|depressa)/.test(n)) { velocidadeFala = Math.min(1.6, velocidadeFala + 0.15); gravar("jarvis.velocidade", String(velocidadeFala)); return "Assim está mais rápido, Pedro?"; }
+  if (/fala\w*\s+mais\s+(?:devagar|lento|calmo)/.test(n)) { velocidadeFala = Math.max(0.7, velocidadeFala - 0.15); gravar("jarvis.velocidade", String(velocidadeFala)); return "Assim está mais devagar, Pedro?"; }
+  if (/(?:velocidade|fala)\w*\s+normal/.test(n)) { velocidadeFala = 1; gravar("jarvis.velocidade", "1"); return "Velocidade normal."; }
+
+  return "";
+}
 
 // Comandos extras: devolve texto, uma Promise de texto (internet) ou "".
 function comandoExtra(t, n) {
   let m;
+  const mais = comandoMais(t, n);
+  if (mais) return mais;
 
   if (/^(?:o que (?:voce|vc) (?:sabe|consegue) fazer|ajuda|quais (?:sao )?(?:as )?(?:suas )?(?:funcoes|comandos)|me ajuda com os comandos)/.test(n)) {
     mostrarHologramaDeTexto("FUNÇÕES", FUNCOES);
