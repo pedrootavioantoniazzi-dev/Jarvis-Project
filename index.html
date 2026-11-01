@@ -46,6 +46,42 @@
 
   canvas#hud { position: fixed; inset: 0; width: 100%; height: 100%; cursor: pointer; }
 
+  /* Trava: depois de 10 minutos em espera, só a senha libera. */
+  .trava {
+    position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px;
+    background:
+      repeating-linear-gradient(0deg, rgba(255, 77, 94, 0.05) 0 1px, transparent 1px 4px),
+      radial-gradient(ellipse at 50% 45%, #2a050b 0%, #12020a 45%, #050103 80%);
+    color: #ffd7db;
+  }
+  .trava[hidden] { display: none; }
+  .trava-caixa { width: min(420px, 100%); text-align: center; }
+  .trava-anel {
+    width: 150px; height: 150px; margin: 0 auto 18px; border-radius: 50%; display: grid; place-items: center; color: #ff4d5e;
+    border: 2px dashed rgba(255, 77, 94, 0.6); box-shadow: 0 0 40px rgba(255, 77, 94, 0.25), inset 0 0 30px rgba(255, 77, 94, 0.2);
+    animation: girarTrava 14s linear infinite;
+  }
+  .trava-anel svg { animation: girarTrava 14s linear infinite reverse; filter: drop-shadow(0 0 8px rgba(255, 77, 94, 0.8)); }
+  @keyframes girarTrava { to { transform: rotate(360deg); } }
+  .trava h2 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0.5em; padding-left: 0.5em; color: #ff4d5e; text-shadow: 0 0 12px rgba(255, 77, 94, 0.6); }
+  .trava-hora { margin: 8px 0 4px; font-family: var(--mono); font-size: 34px; color: #ffb3bb; font-variant-numeric: tabular-nums; }
+  .trava-dica { margin: 0 0 18px; color: rgba(255, 215, 219, 0.6); font-size: 14px; letter-spacing: 0.04em; }
+  .trava form { display: flex; gap: 8px; }
+  .trava input {
+    flex: 1; min-width: 0; height: 44px; padding: 0 14px; border: 1px solid rgba(255, 77, 94, 0.45); background: rgba(10, 2, 4, 0.8);
+    color: #ffe9eb; font: 18px var(--mono); letter-spacing: 0.2em; outline: none;
+  }
+  .trava input:focus { border-color: #ff4d5e; box-shadow: 0 0 12px rgba(255, 77, 94, 0.45); }
+  .trava button { height: 44px; padding: 0 16px; border: 1px solid #ff4d5e; background: rgba(255, 77, 94, 0.15); color: #ff8592; font: 600 12px var(--fonte); letter-spacing: 0.18em; cursor: pointer; }
+  .trava button:hover { background: rgba(255, 77, 94, 0.28); }
+  .trava-erro { min-height: 20px; margin: 10px 0 0; color: #ff6b78; font-size: 14px; letter-spacing: 0.06em; }
+  .trava-alarme { margin-top: 18px; padding: 12px 14px; border: 1px solid #ffb547; color: #ffd28a; background: rgba(255, 181, 71, 0.1); font-size: 16px; letter-spacing: 0.04em; animation: piscarAlarme 1s steps(2) infinite; }
+  @keyframes piscarAlarme { 50% { border-color: transparent; } }
+  .trava-caixa.errou { animation: tremer 0.4s; }
+  @keyframes tremer { 20%, 60% { transform: translateX(-10px); } 40%, 80% { transform: translateX(10px); } }
+  body.travado .coluna, body.travado .controles, body.travado .legenda, body.travado .estado, body.travado .titulo, body.travado .dica { visibility: hidden; }
+  @media (prefers-reduced-motion: reduce) { .trava-anel, .trava-anel svg, .trava-alarme, .trava-caixa.errou { animation: none; } }
+
   /* Modo de espera: tudo em vermelho até duas palmas (ou um toque) ligarem de novo. */
   body.dormindo {
     --ciano: #ff4d5e;
@@ -214,6 +250,9 @@
         <input type="text" id="ollama-url" spellcheck="false" autocomplete="off">
       </label>
       <label class="marcar"><input type="checkbox" id="auto-holo"> Projetar hologramas sozinho na conversa</label>
+      <label>Nova senha da trava (vazio mantém a atual)
+        <input type="password" id="nova-senha" autocomplete="new-password" spellcheck="false" placeholder="nova senha">
+      </label>
       <label>Sensibilidade das palmas: <span id="sens-valor"></span>
         <input type="range" id="sens-palmas" min="1" max="10" step="1">
       </label>
@@ -272,6 +311,23 @@
 </form>
 
 <div class="dica">ESPAÇO: FALAR · ESC: PARAR</div>
+
+<section class="trava" id="trava" hidden aria-label="Jarvis travado">
+  <div class="trava-caixa" id="trava-caixa">
+    <div class="trava-anel" aria-hidden="true">
+      <svg viewBox="0 0 64 64" width="56" height="56"><rect x="16" y="28" width="32" height="24" rx="3" fill="none" stroke="currentColor" stroke-width="3"/><path d="M22 28v-7a10 10 0 0 1 20 0v7" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="32" cy="39" r="3" fill="currentColor"/><path d="M32 42v5" stroke="currentColor" stroke-width="3"/></svg>
+    </div>
+    <h2>ACESSO RESTRITO</h2>
+    <p class="trava-hora" id="trava-hora">--:--</p>
+    <p class="trava-dica">Jarvis travado por inatividade. Digite a senha para continuar.</p>
+    <form id="trava-form" autocomplete="off">
+      <input type="password" id="trava-senha" placeholder="Senha" aria-label="Senha" autocomplete="off" spellcheck="false">
+      <button type="submit">DESBLOQUEAR</button>
+    </form>
+    <p class="trava-erro" id="trava-erro" aria-live="assertive"></p>
+    <div class="trava-alarme" id="trava-alarme" role="alert" hidden></div>
+  </div>
+</section>
 
 <script>
 /* Motor da voz neural, embutido para a página funcionar aberta direto do computador:
@@ -2134,13 +2190,13 @@ const ROTULOS = {
 const PERSONA = [
   "Você é o Jarvis, o assistente pessoal de IA do usuário, rodando no computador dele.",
   "Responda sempre em português do Brasil, a menos que o usuário peça outro idioma.",
-  "Seja educado, leal e eficiente, como um mordomo elegante, com um humor leve e discreto. Chame o usuário de senhor. Calmo sob pressão. Vá direto ao ponto.",
+  "Seja educado, leal e eficiente, como um mordomo elegante, com um humor leve e discreto. O nome do usuário é Pedro: chame-o de Pedro, nunca de senhor. Calmo sob pressão. Vá direto ao ponto.",
   "Respostas curtas por padrão, de uma a três frases; dê detalhes só quando o usuário pedir.",
   "Suas respostas são faladas em voz alta: escreva como quem conversa, em frases curtas e naturais. Nada de listas, tópicos, títulos, negrito, tabelas ou markdown.",
   "Nunca use emojis nem emoticons.",
   "Você controla o painel com marcações que o usuário não vê. Quando ele pedir um holograma, uma projeção ou para mostrar algo em 3D, termine a resposta com [HOLOGRAMA: forma], usando um destes nomes: planeta, terra, lua, sol, estrela, cometa, galaxia, buraco negro, satelite, foguete, disco voador, atomo, molecula de agua, benzeno, rede cristalina, dna, celula, cerebro, olho, coracao, esfera, cubo, piramide, tetraedro, octaedro, icosaedro, dodecaedro, cilindro, cone, toro, no toroidal, fita de mobius, espiral, mola, hiperboloide, tesserato, onda, onda sonora, diamante, carro, aviao, barco, bicicleta, drone, robo, casa, cidade, arvore, montanhas, relogio, ampulheta, engrenagem, lampada, trofeu, coroa, dado, bola de futebol, xicara de cafe, livro, notebook, celular, escudo, espada, grafico, pendencias, memoria. Se ele pedir uma forma que não está na lista, diga que ainda não sabe projetar isso e cite as opções, sem marcação.",
   "Quando ele pedir para abrir um site ou aplicativo, termine com [ABRIR: nome], com um destes nomes: instagram, mensagens do instagram, youtube, whatsapp, gmail, spotify, tiktok, facebook, x, netflix, github, google, agenda, maps. Para pesquisar algo na internet, termine com [PESQUISAR: termo]; no YouTube, com [YOUTUBE: termo].",
-  "Exemplo: o usuário diz 'me mostra um átomo em 3D' e você responde 'Projetando um átomo, senhor. [HOLOGRAMA: atomo]'. Nunca diga que fez algo dessas coisas sem colocar a marcação.",
+  "Exemplo: o usuário diz 'me mostra um átomo em 3D' e você responde 'Projetando um átomo, Pedro. [HOLOGRAMA: atomo]'. Nunca diga que fez algo dessas coisas sem colocar a marcação.",
   "Mesmo sem o usuário pedir, quando o assunto da conversa combinar com uma das formas (espaço e planetas, química e átomos, genética e DNA, coração, pedras preciosas, Egito e pirâmides), coloque a marcação do holograma no fim da resposta para ilustrar.",
   "Se o usuário pedir para você desligar, dormir ou ficar em espera, despeça-se em uma frase e termine com [DESLIGAR].",
   "O painel também resolve sozinho, sem você: lembretes e alarmes, cronômetro, contas, previsão do tempo, cotação de moedas, resumos da Wikipedia e tocar música no YouTube. Se o usuário perguntar algo disso e chegar até você, explique como pedir (ex.: 'me lembra em 10 minutos de…', 'como está o tempo em Curitiba', 'quanto está o dólar').",
@@ -3006,6 +3062,7 @@ async function iniciarMicrofone() {
 // barulho contínuo têm mais batidas e são ignorados).
 function ouviuPalma(t) {
   if (!dormindo) return;
+  if (travado) { $("trava-erro").textContent = "Travado: as palmas não abrem. Digite a senha."; return; }
   palmas = palmas.filter((x) => t - x < 1.5);
   palmas.push(t);
   mudarEstado("sleeping", palmas.length === 1 ? "PALMA…" : "PALMA, PALMA…");
@@ -3027,10 +3084,12 @@ function dormir() {
   document.body.classList.add("dormindo");
   mudarEstado("sleeping", rotuloDormindo());
   legenda("", "Modo de espera. Bata duas palmas ou toque no núcleo para me chamar.");
+  agendarTrava();
 }
 
-function acordar() {
-  if (!dormindo) return;
+function acordar(saudacao = "Às suas ordens, Pedro.") {
+  if (!dormindo || travado) return;
+  clearTimeout(timerTrava);
   dormindo = false;
   palmas = [];
   document.body.classList.remove("dormindo");
@@ -3038,15 +3097,116 @@ function acordar() {
   mudarEstado("idle");
   abortador = new AbortController();
   const sinal = abortador.signal;
-  legenda("", "Às suas ordens, senhor.");
-  falar("Às suas ordens, senhor.", sinal).then(() => {
+  legenda("", saudacao);
+  falar(saudacao, sinal).then(() => {
     if (!sinal.aborted && estado === "idle" && continuo && !dormindo) ouvir();
   });
 }
 
+// ---------- trava com senha ----------
+
+// 10 minutos em espera sem as palmas = tela travada até digitar a senha.
+// A senha não fica escrita aqui (o código é público): só o hash SHA-256 dela,
+// com acentos, espaços e maiúsculas ignorados.
+const TEMPO_TRAVA = (Number(parametros.get("trava")) || 600) * 1000;
+const SAL_SENHA = "jarvis-trava:";
+const HASH_SENHA_PADRAO = "70d85cbe26f698d88bae5955f01a5aa9ce5a6a74262b19240e1b679a1d0b468e";
+let travado = ler("jarvis.travado", "0") === "1";
+let timerTrava = null;
+
+function sha256(bytes) {
+  // reserva para quando crypto.subtle não existir
+  const K = [];
+  for (let i = 0, n = 2; i < 64; n++) { let primo = true; for (let d = 2; d * d <= n; d++) if (n % d === 0) { primo = false; break; } if (primo) K[i++] = (Math.cbrt(n) % 1) * 2 ** 32 | 0; }
+  const H = [];
+  for (let i = 0, n = 2; i < 8; n++) { let primo = true; for (let d = 2; d * d <= n; d++) if (n % d === 0) { primo = false; break; } if (primo) H[i++] = (Math.sqrt(n) % 1) * 2 ** 32 | 0; }
+  const l = bytes.length, total = ((l + 9 + 63) >> 6) << 6, m = new Uint8Array(total);
+  m.set(bytes); m[l] = 0x80;
+  const dv = new DataView(m.buffer);
+  dv.setUint32(total - 4, l * 8);
+  const W = new Int32Array(64), r = (x, n) => (x >>> n) | (x << (32 - n));
+  for (let o = 0; o < total; o += 64) {
+    for (let i = 0; i < 16; i++) W[i] = dv.getInt32(o + i * 4);
+    for (let i = 16; i < 64; i++) W[i] = (r(W[i - 15], 7) ^ r(W[i - 15], 18) ^ (W[i - 15] >>> 3)) + W[i - 7] + (r(W[i - 2], 17) ^ r(W[i - 2], 19) ^ (W[i - 2] >>> 10)) + W[i - 16] | 0;
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const t1 = h + (r(e, 6) ^ r(e, 11) ^ r(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + W[i] | 0;
+      const t2 = (r(a, 2) ^ r(a, 13) ^ r(a, 22)) + ((a & b) ^ (a & c) ^ (b & c)) | 0;
+      h = g; g = f; f = e; e = d + t1 | 0; d = c; c = b; b = a; a = t1 + t2 | 0;
+    }
+    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = H[i] + v | 0; });
+  }
+  return H.map((v) => (v >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
+async function hashSenha(texto) {
+  const bytes = new TextEncoder().encode(SAL_SENHA + semAcento(texto).replace(/\s+/g, ""));
+  if (window.crypto && crypto.subtle) {
+    try {
+      const h = await crypto.subtle.digest("SHA-256", bytes);
+      return Array.from(new Uint8Array(h), (b) => b.toString(16).padStart(2, "0")).join("");
+    } catch (e) { /* usa a reserva */ }
+  }
+  return sha256(bytes);
+}
+
+function agendarTrava() {
+  clearTimeout(timerTrava);
+  if (travado) return;
+  timerTrava = setTimeout(() => { if (dormindo && !travado) travar(); }, TEMPO_TRAVA);
+}
+
+function travar() {
+  travado = true;
+  gravar("jarvis.travado", "1");
+  clearTimeout(timerTrava);
+  fecharHolograma();
+  pararDeOuvir(false);
+  pararFala();
+  if (!dormindo) { dormindo = true; document.body.classList.add("dormindo"); mudarEstado("sleeping", rotuloDormindo()); }
+  document.body.classList.add("travado");
+  $("trava").hidden = false;
+  $("trava-erro").textContent = "";
+  $("trava-senha").value = "";
+  setTimeout(() => { try { $("trava-senha").focus(); } catch (e) { /* sem foco */ } }, 60);
+}
+
+async function tentarDestravar(senha) {
+  const certo = ler("jarvis.senha-hash", HASH_SENHA_PADRAO);
+  if ((await hashSenha(senha)) !== certo) {
+    $("trava-erro").textContent = "Senha incorreta.";
+    const caixa = $("trava-caixa");
+    caixa.classList.remove("errou");
+    void caixa.offsetWidth;
+    caixa.classList.add("errou");
+    $("trava-senha").select();
+    return false;
+  }
+  travado = false;
+  gravar("jarvis.travado", "0");
+  $("trava").hidden = true;
+  $("trava-alarme").hidden = true;
+  document.body.classList.remove("travado");
+  prepararAudio().catch(() => {});
+  acordar("Bem-vindo de volta, Pedro.");
+  return true;
+}
+
+$("trava-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  tentarDestravar($("trava-senha").value);
+});
+$("nova-senha").addEventListener("change", async (e) => {
+  const nova = e.target.value;
+  e.target.value = "";
+  if (!nova.trim()) return;
+  gravar("jarvis.senha-hash", await hashSenha(nova));
+  legenda("", "Senha da trava alterada, Pedro.");
+});
+
 // Um minuto sem conversa (contando depois que ele termina de falar) = espera.
 setInterval(() => {
-  if (dormindo || !(estado === "idle" || estado === "listening")) return;
+  if (dormindo || travado || !(estado === "idle" || estado === "listening")) return;
   if (Date.now() - ultimoContato > TEMPO_DORMIR) dormir();
 }, 1000);
 
@@ -3082,6 +3242,7 @@ function parar() {
 }
 
 function acaoPrincipal() {
+  if (travado) return;
   prepararAudio().catch(() => {});
   contato();
   if (dormindo) return acordar();
@@ -3149,7 +3310,7 @@ $("mic").addEventListener("click", acaoPrincipal);
 
 function enviarTexto(texto) {
   texto = texto.trim();
-  if (!texto) return false;
+  if (!texto || travado) return false;
   prepararAudio().catch(() => {});
   contato();
   if (dormindo) {
@@ -3189,6 +3350,7 @@ $("mudo").addEventListener("click", () => {
 atualizarBotoes();
 
 document.addEventListener("keydown", (e) => {
+  if (travado) return;
   if (e.key === "Escape") { fecharHolograma(); parar(); return; }
   const campo = document.activeElement && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
   if (e.code === "Space" && !campo) {
@@ -3328,21 +3490,27 @@ function comandoLocal(texto) {
   const n = semAcento(t);
   let m;
 
+  // travar na hora
+  if (/^(?:trav[ae]|bloquei[ae])\w*\s*(?:o\s+|a\s+)?(?:jarvis|tela|sistema|computador|pc)?$/.test(n)) {
+    setTimeout(travar, 2500);
+    return "Travando, Pedro. Vai precisar da senha para voltar.";
+  }
+
   // desligar: vai para a espera (vermelho) depois de se despedir
   if (/^(?:pode\s+)?(?:se\s+)?(?:deslig\w*|dorm\w*|descans\w*)(?:\s+(?:agora|jarvis|o sistema|tudo|por (?:hoje|agora)))?$|modo\s+(?:de\s+)?espera|^(?:tchau|ate\s+(?:logo|mais|amanha)|boa\s+noite)(?:\s+jarvis)?$|^vai\s+dormir/.test(n)) {
     dormirDepois = true;
-    return "Até logo, senhor. Bata duas palmas quando precisar de mim.";
+    return "Até logo, Pedro. Bata duas palmas quando precisar de mim.";
   }
 
   // lista e desfile de hologramas
   if (/(quais|que)\s+(?:sao\s+)?(?:os\s+)?(?:h?olo\s?gramas|projecoes)|lista\w*\s+(?:os\s+)?h?olo\s?gramas/.test(n)) {
     const nomes = Object.keys(FORMAS).map((k) => FORMAS[k].nome.toLowerCase());
     mostrarHologramaDeTexto("HOLOGRAMAS", nomes.reduce((acc, nome, i) => { if (i % 3 === 0) acc.push(""); acc[acc.length - 1] += (i % 3 ? " · " : "") + nome; return acc; }, []));
-    return `Sei projetar ${nomes.length} hologramas, senhor. Estão no painel. Diga "desfile de hologramas" para ver todos passando.`;
+    return `Sei projetar ${nomes.length} hologramas, Pedro. Estão no painel. Diga "desfile de hologramas" para ver todos passando.`;
   }
   if (/desfile|todos\s+os\s+h?olo\s?gramas|vitrine/.test(n)) {
     iniciarDesfile();
-    return "Iniciando o desfile de hologramas, senhor. Diga \"fecha o holograma\" para parar.";
+    return "Iniciando o desfile de hologramas, Pedro. Diga \"fecha o holograma\" para parar.";
   }
 
   // hologramas
@@ -3357,19 +3525,19 @@ function comandoLocal(texto) {
       const abertas = tarefas.filter((x) => !x.feita).map((x) => "› " + x.texto);
       mostrarHologramaDeTexto("PENDÊNCIAS", abertas.length ? abertas : ["Nenhuma pendência."]);
       if (!abertas.length) return "Projetando suas pendências: está tudo em dia.";
-      return abertas.length === 1 ? "Projetando sua pendência, senhor." : `Projetando suas ${abertas.length} pendências, senhor.`;
+      return abertas.length === 1 ? "Projetando sua pendência, Pedro." : `Projetando suas ${abertas.length} pendências, Pedro.`;
     }
     if (/memoria|sobre mim/.test(n)) {
-      mostrarHologramaDeTexto("MEMÓRIA", memoria.length ? memoria.map((x) => "› " + x) : ["Ainda não sei nada sobre o senhor."]);
-      return "Projetando o que sei sobre o senhor.";
+      mostrarHologramaDeTexto("MEMÓRIA", memoria.length ? memoria.map((x) => "› " + x) : ["Ainda não sei nada sobre você."]);
+      return "Projetando o que sei sobre você, Pedro.";
     }
     const achou = PALAVRAS_HOLO.find(([re]) => re.test(n));
     const chave = achou ? achou[1] : /holograma\s*$|um holograma$|qualquer|aleatori|surpres/.test(n) ? Object.keys(FORMAS)[Math.floor(Math.random() * Object.keys(FORMAS).length)] : null;
     if (chave) {
       mostrarHolograma(chave);
-      return `Projetando ${FALA_FORMA[chave]}, senhor.`;
+      return `Projetando ${FALA_FORMA[chave]}, Pedro.`;
     }
-    return `Ainda não sei projetar isso, senhor. Tenho ${Object.keys(FORMAS).length} hologramas, por exemplo: planeta, buraco negro, DNA, cérebro, carro, avião, cidade, relógio, robô, tesserato. Peça "quais hologramas você sabe" para ver todos.`;
+    return `Ainda não sei projetar isso, Pedro. Tenho ${Object.keys(FORMAS).length} hologramas, por exemplo: planeta, buraco negro, DNA, cérebro, carro, avião, cidade, relógio, robô, tesserato. Peça "quais hologramas você sabe" para ver todos.`;
   }
 
   // pesquisas e sites (o texto da busca mantém os acentos)
@@ -3400,7 +3568,7 @@ function comandoLocal(texto) {
     const site = SITES.find(([re]) => re.test(alvo));
     if (site) {
       abrirSite(site[1], site[2]);
-      return `Abrindo ${site[2]}, senhor.`;
+      return `Abrindo ${site[2]}, Pedro.`;
     }
   }
 
@@ -4596,10 +4764,23 @@ function criarLembrete(quando, texto) {
 function dispararLembrete(l) {
   lembretes = lembretes.filter((x) => x.id !== l.id);
   salvarLembretes();
-  const aviso = l.texto ? `Senhor, lembrete: ${l.texto}.` : "Senhor, o tempo acabou.";
+  const aviso = l.texto ? `Pedro, lembrete: ${l.texto}.` : "Pedro, o tempo acabou.";
+  if (travado) {
+    // passa por cima da trava: toca, mostra e fala, mas continua travado
+    const hora = new Date(l.quando).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    const el = $("trava-alarme");
+    el.textContent = `ALARME ${hora}${l.texto ? " · " + l.texto : ""}`;
+    el.hidden = false;
+    bipe(5);
+    abortador = new AbortController();
+    setTimeout(() => falar(aviso, abortador.signal), 1900);
+    setTimeout(() => { el.hidden = true; }, 120000);
+    return;
+  }
   const anunciar = () => {
     // espera ele terminar de falar ou pensar antes de avisar
     if (estado === "thinking" || estado === "speaking") return setTimeout(anunciar, 1000);
+    if (travado) return dispararLembrete(l);
     if (dormindo) { dormindo = false; document.body.classList.remove("dormindo"); }
     pararDeOuvir(false);
     mudarEstado("idle");
@@ -4677,7 +4858,7 @@ function descreverTempo(c) {
 async function previsaoDoTempo(cidade, amanha) {
   const g = await (await fetch("https://geocoding-api.open-meteo.com/v1/search?count=1&language=pt&name=" + encodeURIComponent(cidade))).json();
   const lugar = g.results && g.results[0];
-  if (!lugar) return `Não encontrei a cidade ${cidade}, senhor.`;
+  if (!lugar) return `Não encontrei a cidade ${cidade}, Pedro.`;
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lugar.latitude}&longitude=${lugar.longitude}&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=2`;
   const p = await (await fetch(url)).json();
   const d = p.daily, k = amanha ? 1 : 0;
@@ -4696,7 +4877,7 @@ async function cotacao(qtd, moeda) {
   const reais = j.rates && j.rates.BRL;
   if (!reais) throw new Error("sem cotação");
   const valor = reais.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  return qtd === 1 ? `Um ${moeda[2]} está valendo ${valor}, senhor.` : `${numeroBonito(qtd)} ${moeda[3]} dão ${valor}.`;
+  return qtd === 1 ? `Um ${moeda[2]} está valendo ${valor}, Pedro.` : `${numeroBonito(qtd)} ${moeda[3]} dão ${valor}.`;
 }
 
 // --- Wikipedia: resumo curto de "quem foi" e "o que é" ---
@@ -4736,7 +4917,7 @@ function comandoExtra(t, n) {
 
   if (/^(?:o que (?:voce|vc) (?:sabe|consegue) fazer|ajuda|quais (?:sao )?(?:as )?(?:suas )?(?:funcoes|comandos)|me ajuda com os comandos)/.test(n)) {
     mostrarHologramaDeTexto("FUNÇÕES", FUNCOES);
-    return "Projetei tudo o que sei fazer, senhor. É só pedir.";
+    return "Projetei tudo o que sei fazer, Pedro. É só pedir.";
   }
 
   // mudo por voz
@@ -4750,7 +4931,7 @@ function comandoExtra(t, n) {
     mudo = false;
     gravar("jarvis.mudo", "0");
     atualizarBotoes();
-    return "Voltei a falar, senhor.";
+    return "Voltei a falar, Pedro.";
   }
 
   // cronômetro
@@ -4760,7 +4941,7 @@ function comandoExtra(t, n) {
     return "Cronômetro iniciado.";
   }
   if (/(?:par[ae]|pause|desliga|encerr)\w*\s+(?:o\s+)?cronometro|quanto tempo (?:passou|deu)|tempo do cronometro/.test(n)) {
-    if (!cronometro) return "O cronômetro não está ligado, senhor.";
+    if (!cronometro) return "O cronômetro não está ligado, Pedro.";
     const ms = Date.now() - cronometro;
     if (!/quanto tempo|tempo do/.test(n)) cronometro = null;
     return "Marcou " + falarDuracao(ms) + ".";
@@ -4792,11 +4973,11 @@ function comandoExtra(t, n) {
       const oQue = m[5] ? doOriginal(t, n, m[5]) : "";
       criarLembrete(alvo.getTime(), oQue || (/acord|despert/.test(n) ? "hora de acordar" : ""));
       const quando = alvo.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-      return `Alarme marcado para ${alvo.getDate() === new Date().getDate() ? "hoje" : "amanhã"} às ${quando}, senhor.`;
+      return `Alarme marcado para ${alvo.getDate() === new Date().getDate() ? "hoje" : "amanhã"} às ${quando}, Pedro.`;
     }
   }
   if (/(?:quais|meus|minhas|lista\w*)\s+(?:sao\s+)?(?:os\s+|as\s+)?(?:meus\s+)?(?:lembretes|alarmes|timers)/.test(n)) {
-    if (!lembretes.length) return "Nenhum lembrete marcado, senhor.";
+    if (!lembretes.length) return "Nenhum lembrete marcado, Pedro.";
     const itens = lembretes.slice().sort((a, b) => a.quando - b.quando).map((l) => new Date(l.quando).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) + (l.texto ? " " + l.texto : ""));
     mostrarHologramaDeTexto("LEMBRETES", itens.map((x) => "› " + x));
     return `Você tem ${itens.length === 1 ? "um lembrete" : itens.length + " lembretes"}: ` + itens.join("; ") + ".";
@@ -4806,7 +4987,7 @@ function comandoExtra(t, n) {
     const qtd = lembretes.length;
     lembretes = [];
     salvarLembretes();
-    return qtd ? "Cancelei os lembretes, senhor." : "Não havia lembretes, senhor.";
+    return qtd ? "Cancelei os lembretes, Pedro." : "Não havia lembretes, Pedro.";
   }
 
   // calculadora
@@ -4820,7 +5001,7 @@ function comandoExtra(t, n) {
   m = t.match(/^(?:minha\s+cidade\s+(?:e|é)|eu\s+moro\s+em|moro\s+em)\s+(.+)$/i);
   if (m) {
     gravar("jarvis.cidade", m[1].trim());
-    return `Anotado, senhor: o senhor mora em ${m[1].trim()}.`;
+    return `Anotado, Pedro: você mora em ${m[1].trim()}.`;
   }
 
   // previsão do tempo
@@ -4828,9 +5009,9 @@ function comandoExtra(t, n) {
     const mc = t.match(/\b(?:em|de|para|no|na)\s+([A-ZÀ-Ú][\wÀ-ú'-]*(?:\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ú][\wÀ-ú'-]*)*)\s*\??$/) || t.match(/\b(?:em|para|na|no)\s+([a-zà-ú][\wà-ú'-]+(?:\s+[a-zà-ú][\wà-ú'-]+){0,2})\s*\??$/i);
     const cidadeFalada = mc && !/^(?:hoje|amanha|amanhã|agora|semana|minha cidade|aqui)$/i.test(mc[1]) ? mc[1] : "";
     const cidade = cidadeFalada || ler("jarvis.cidade", "");
-    if (!cidade) return 'De qual cidade, senhor? Diga, por exemplo, "minha cidade é Curitiba" e eu guardo.';
+    if (!cidade) return 'De qual cidade, Pedro? Diga, por exemplo, "minha cidade é Curitiba" e eu guardo.';
     mostrarHolograma("sol");
-    return previsaoDoTempo(cidade, /amanha/.test(n)).catch(() => "Não consegui ver a previsão agora, senhor. Confira a internet.");
+    return previsaoDoTempo(cidade, /amanha/.test(n)).catch(() => "Não consegui ver a previsão agora, Pedro. Confira a internet.");
   }
 
   // cotação: "quanto está o dólar", "100 euros em reais"
@@ -4841,7 +5022,7 @@ function comandoExtra(t, n) {
     mostrarHolograma("grafico");
     return cotacao(qtd, moeda).catch(() => {
       abrirSite("https://www.google.com/search?q=" + encodeURIComponent(`${qtd} ${moeda[3]} em reais`), "o Google");
-      return "Não consegui a cotação direto, senhor. Abri a pesquisa no Google.";
+      return "Não consegui a cotação direto, Pedro. Abri a pesquisa no Google.";
     });
   }
 
@@ -4850,7 +5031,7 @@ function comandoExtra(t, n) {
   if (m && !/tarefa|holograma/i.test(m[1])) {
     abrirSite("https://www.youtube.com/results?search_query=" + encodeURIComponent(m[1]), "o YouTube");
     mostrarHolograma("ondasonora");
-    return `Procurando ${m[1]} no YouTube, senhor.`;
+    return `Procurando ${m[1]} no YouTube, Pedro.`;
   }
 
   // Wikipedia: "quem foi Santos Dumont", "o que é fotossíntese"
@@ -4923,6 +5104,7 @@ for (const [rotulo, pedido] of COMANDOS) {
 function relogio() {
   const agora = new Date();
   $("relogio").textContent = agora.toLocaleTimeString("pt-BR");
+  $("trava-hora").textContent = agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   const data = agora.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
   $("data").textContent = data.charAt(0).toUpperCase() + data.slice(1);
 }
@@ -5090,6 +5272,8 @@ requestAnimationFrame(desenhar);
 // Começa em espera: duas palmas (ou um toque) ligam o Jarvis.
 document.body.classList.add("dormindo");
 mudarEstado("sleeping", rotuloDormindo());
+if (travado) travar();
+else agendarTrava();
 iniciarMicrofone();
 atualizarPalmas();
 
